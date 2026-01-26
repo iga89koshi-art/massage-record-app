@@ -1,33 +1,311 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>施術記録アプリ</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="style.css">
-    <meta name="theme-color" content="#4A90E2">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="訪問マッサージ業務の施術記録と営業記録を管理するアプリ">
+  <meta name="theme-color" content="#2196F3">
+  <title>訪問マッサージ記録</title>
+
+  <!-- PWA設定 -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+
+  <!-- スタイルシート -->
+  <link rel="stylesheet" href="./styles/main.css">
 </head>
+
 <body>
-    <div id="app">
-        <!-- Views will be injected here -->
-        <header>
-            <h1>施術記録</h1>
-            <button id="menu-btn" aria-label="設定">⚙️</button>
-        </header>
+  <!-- ローディング -->
+  <div id="loader" class="loader">
+    <div class="loader-spinner"></div>
+    <p id="loader-text">処理中...</p>
+  </div>
 
-        <main id="main-content">
-            <!-- Dynamic Content -->
-        </main>
+  <!-- トースト通知 -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ホーム画面 -->
+  <div id="home" class="screen active">
+    <div class="container">
+      <header class="app-header">
+        <h1>📋 訪問マッサージ記録</h1>
+      </header>
+
+      <div class="button-grid">
+        <button id="btn-treatment" class="menu-btn primary">
+          <span class="icon">📝</span>
+          <span class="label">施術記録を入力</span>
+        </button>
+
+        <button id="btn-sales" class="menu-btn secondary">
+          <span class="icon">📞</span>
+          <span class="label">営業記録を入力</span>
+        </button>
+
+        <button id="btn-view" class="menu-btn info">
+          <span class="icon">📊</span>
+          <span class="label">記録を見る</span>
+        </button>
+
+        <button id="btn-settings" class="menu-btn neutral">
+          <span class="icon">⚙️</span>
+          <span class="label">設定</span>
+        </button>
+      </div>
     </div>
+  </div>
 
-    <script src="app.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(reg => console.log('Service Worker registered', reg))
-                .catch(err => console.error('Service Worker registration failed', err));
-        }
-    </script>
+  <!-- 施術記録入力画面 -->
+  <div id="treatment" class="screen">
+    <div class="container">
+      <header class="screen-header">
+        <h2>📝 施術記録入力</h2>
+      </header>
+
+      <form class="input-form">
+        <div class="form-group">
+          <label for="treatment-date">日付</label>
+          <input type="date" id="treatment-date" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+          <label for="treatment-patient">患者 <span class="required">*</span></label>
+          <select id="treatment-patient" class="form-control" required>
+            <option value="">選択してください</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="treatment-staff">担当者 <span class="required">*</span></label>
+          <select id="treatment-staff" class="form-control" required>
+            <option value="">選択してください</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="treatment-memo">メモ</label>
+          <textarea id="treatment-memo" class="form-control" rows="3" placeholder="メモを入力..."></textarea>
+        </div>
+
+        <div class="button-group">
+          <button type="button" id="btn-save-treatment" class="btn btn-primary">保存</button>
+          <button type="button" id="btn-back-treatment" class="btn btn-secondary">戻る</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 営業記録入力画面 -->
+  <div id="sales" class="screen">
+    <div class="container">
+      <header class="screen-header">
+        <h2>📞 営業記録入力</h2>
+      </header>
+
+      <form class="input-form">
+        <div class="form-group">
+          <label for="sales-date">日付</label>
+          <input type="date" id="sales-date" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+          <label for="sales-care-manager">ケアマネ名 <span class="required">*</span></label>
+          <input type="text" id="sales-care-manager" class="form-control" placeholder="ケアマネ名を入力" required>
+        </div>
+
+        <div class="form-group">
+          <label for="sales-staff">営業担当 <span class="required">*</span></label>
+          <select id="sales-staff" class="form-control" required>
+            <option value="">選択してください</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales-content">内容</label>
+          <textarea id="sales-content" class="form-control" rows="5" placeholder="営業内容を入力..."></textarea>
+        </div>
+
+        <div class="button-group">
+          <button type="button" id="btn-save-sales" class="btn btn-primary">保存</button>
+          <button type="button" id="btn-back-sales" class="btn btn-secondary">戻る</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 記録閲覧画面 -->
+  <div id="view" class="screen">
+    <div class="container">
+      <header class="screen-header">
+        <h2>📊 記録閲覧</h2>
+      </header>
+
+      <div class="tabs">
+        <button id="tab-treatment" class="tab-btn active">施術記録</button>
+        <button id="tab-sales" class="tab-btn">営業記録</button>
+      </div>
+
+      <!-- 施術記録タブ -->
+      <div id="treatment-tab" class="tab-content active">
+        <div class="filter-section">
+          <div class="form-group">
+            <label for="filter-treatment-patient">患者</label>
+            <select id="filter-treatment-patient" class="form-control">
+              <option value="all">全て</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="filter-treatment-period">期間</label>
+            <select id="filter-treatment-period" class="form-control">
+              <option value="thisMonth">今月</option>
+              <option value="lastMonth">先月</option>
+              <option value="last3Months">過去3ヶ月</option>
+              <option value="all">全期間</option>
+            </select>
+          </div>
+
+          <button id="btn-load-treatment" class="btn btn-primary">表示</button>
+        </div>
+
+        <div class="records-table">
+          <table>
+            <thead>
+              <tr>
+                <th>日付</th>
+                <th>患者名</th>
+                <th>担当者</th>
+                <th>メモ</th>
+              </tr>
+            </thead>
+            <tbody id="treatment-records-body">
+              <tr>
+                <td colspan="4" style="text-align: center;">表示ボタンを押してください</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 営業記録タブ -->
+      <div id="sales-tab" class="tab-content">
+        <div class="filter-section">
+          <div class="form-group">
+            <label for="filter-sales-period">期間</label>
+            <select id="filter-sales-period" class="form-control">
+              <option value="thisMonth">今月</option>
+              <option value="lastMonth">先月</option>
+              <option value="last3Months">過去3ヶ月</option>
+              <option value="all">全期間</option>
+            </select>
+          </div>
+
+          <button id="btn-load-sales" class="btn btn-primary">表示</button>
+        </div>
+
+        <div class="records-table">
+          <table>
+            <thead>
+              <tr>
+                <th>日付</th>
+                <th>ケアマネ名</th>
+                <th>営業担当</th>
+                <th>内容</th>
+              </tr>
+            </thead>
+            <tbody id="sales-records-body">
+              <tr>
+                <td colspan="4" style="text-align: center;">表示ボタンを押してください</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button id="btn-back-view" class="btn btn-secondary">戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 設定画面 -->
+  <div id="settings" class="screen">
+    <div class="container">
+      <header class="screen-header">
+        <h2>⚙️ 設定</h2>
+      </header>
+
+      <div class="settings-section">
+        <h3>Notion API設定</h3>
+
+        <div class="form-group">
+          <label for="setting-notion-api-key">Notion APIキー</label>
+          <input type="password" id="setting-notion-api-key" class="form-control" placeholder="secret_...">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-notion-patient-db">患者データベースID</label>
+          <input type="text" id="setting-notion-patient-db" class="form-control" placeholder="データベースID">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-notion-care-manager-db">ケアマネデータベースID（将来対応）</label>
+          <input type="text" id="setting-notion-care-manager-db" class="form-control" placeholder="データベースID">
+        </div>
+
+        <div class="button-group-inline">
+          <button id="btn-test-notion" class="btn btn-info">接続テスト</button>
+          <button id="btn-reload-patients" class="btn btn-info">患者リスト再読み込み</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Google Apps Script設定</h3>
+
+        <div class="form-group">
+          <label for="setting-gas-spreadsheet-url">スプレッドシートURL</label>
+          <input type="url" id="setting-gas-spreadsheet-url" class="form-control"
+            placeholder="https://docs.google.com/spreadsheets/d/...">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-gas-api-url">Apps Script URL</label>
+          <input type="url" id="setting-gas-api-url" class="form-control"
+            placeholder="https://script.google.com/macros/s/...">
+        </div>
+
+        <button id="btn-test-gas" class="btn btn-info">接続テスト</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>パスワード設定</h3>
+        <button id="btn-change-password" class="btn btn-warning">パスワード変更</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>データ管理</h3>
+        <div class="button-group-inline">
+          <button id="btn-clear-cache" class="btn btn-warning">キャッシュをクリア</button>
+          <button id="btn-reset-all" class="btn btn-danger">全データリセット</button>
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button id="btn-save-settings" class="btn btn-primary">設定を保存</button>
+        <button id="btn-back-settings" class="btn btn-secondary">戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="./js/utils.js?v=2"></script>
+  <script src="./js/storage.js?v=2"></script>
+  <script src="./js/api.js?v=2"></script>
+  <script src="./js/ui.js?v=2"></script>
+  <script src="./js/app.js?v=2"></script>
 </body>
+
 </html>

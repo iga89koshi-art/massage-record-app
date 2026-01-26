@@ -1,20 +1,24 @@
 {
-  "name": "施術記録アプリ",
-  "short_name": "施術記録",
+  "name": "訪問マッサージ記録",
+  "short_name": "マッサージ記録",
+  "description": "訪問マッサージ業務の施術記録と営業記録を管理するアプリ",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#F5F7FA",
-  "theme_color": "#4A90E2",
+  "background_color": "#ffffff",
+  "theme_color": "#2196F3",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "https://via.placeholder.com/192.png?text=Icon",
+      "src": "./icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "https://via.placeholder.com/512.png?text=Icon",
+      "src": "./icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
