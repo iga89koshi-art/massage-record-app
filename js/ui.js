@@ -213,17 +213,20 @@ async function saveBatchTreatment() {
     try {
         showLoading(`${records.length}件を保存中...`);
 
+        // 全件を並列送信（高速化）
+        const results = await Promise.all(
+            records.map(record => saveTreatmentRecord(record))
+        );
+
         let offlineCount = 0;
         let successCount = 0;
-
-        for (const record of records) {
-            const result = await saveTreatmentRecord(record);
+        results.forEach(result => {
             if (result.offline) {
                 offlineCount++;
             } else {
                 successCount++;
             }
-        }
+        });
 
         hideLoading();
 
@@ -449,17 +452,20 @@ async function saveBatchSales() {
     try {
         showLoading(`${records.length}件を保存中...`);
 
+        // 全件を並列送信（高速化）
+        const results = await Promise.all(
+            records.map(record => saveSalesRecord(record))
+        );
+
         let offlineCount = 0;
         let successCount = 0;
-
-        for (const record of records) {
-            const result = await saveSalesRecord(record);
+        results.forEach(result => {
             if (result.offline) {
                 offlineCount++;
             } else {
                 successCount++;
             }
-        }
+        });
 
         hideLoading();
 
