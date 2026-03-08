@@ -4,22 +4,22 @@ let currentScreen = 'home';
 let passwordAttempts = 0;
 let passwordLockUntil = null;
 
-// 一括入力用のエントリーカウンター
-let treatmentEntryCounter = 0;
-let salesEntryCounter = 0;
-
 /**
  * 画面遷移
  */
 function showScreen(screenId) {
+    // 全画面を非表示
     document.querySelectorAll('.screen').forEach(screen => {
         screen.classList.remove('active');
     });
 
+    // 指定画面を表示
     const screen = document.getElementById(screenId);
     if (screen) {
         screen.classList.add('active');
         currentScreen = screenId;
+
+        // 画面ごとの初期化処理
         initScreen(screenId);
     }
 }
@@ -30,6 +30,7 @@ function showScreen(screenId) {
 function initScreen(screenId) {
     switch (screenId) {
         case 'home':
+            // ホーム画面は特に初期化不要
             break;
         case 'treatment':
             initTreatmentScreen();
@@ -66,33 +67,31 @@ function setupHomeScreen() {
     });
 }
 
-// =============================================
-// 施術記録入力画面（一括入力）
-// =============================================
+// === 施術記録入力画面 ===
 
 function initTreatmentScreen() {
     // 日付をデフォルト設定
     document.getElementById('treatment-date').value = getToday();
 
+    // 患者プルダウンを設定
+    populatePatientSelect();
+
     // 担当者プルダウンを設定
     populateTreatmentStaffSelect();
+}
 
-    // 一時保存データの復元を試みる
-    const draft = getTreatmentDraft();
-    if (draft) {
-        if (draft.date) document.getElementById('treatment-date').value = draft.date;
-        if (draft.staff) document.getElementById('treatment-staff').value = draft.staff;
-        if (draft.entries && draft.entries.length > 0) {
-            draft.entries.forEach(entry => {
-                addTreatmentEntry(entry.patient, entry.memo);
-            });
-        }
-    }
+function populatePatientSelect() {
+    const select = document.getElementById('treatment-patient');
+    const patients = getPatients();
 
-    // エントリーがなければ1つ追加
-    if (document.querySelectorAll('#treatment-batch-list .batch-entry').length === 0) {
-        addTreatmentEntry();
-    }
+    select.innerHTML = '<option value="">選択してください</option>';
+
+    patients.forEach(patient => {
+        const option = document.createElement('option');
+        option.value = patient.name;
+        option.textContent = patient.name;
+        select.appendChild(option);
+    });
 }
 
 function populateTreatmentStaffSelect() {
@@ -109,193 +108,59 @@ function populateTreatmentStaffSelect() {
     });
 }
 
-/**
- * 患者選択プルダウンのHTMLを生成
- */
-function createPatientSelectHtml(selectedValue) {
-    const patients = getPatients();
-    let html = '<option value="">選択してください</option>';
-    patients.forEach(patient => {
-        const selected = patient.name === selectedValue ? ' selected' : '';
-        html += `<option value="${patient.name}"${selected}>${patient.name}</option>`;
-    });
-    return html;
-}
-
-/**
- * 施術記録エントリーを追加
- */
-function addTreatmentEntry(patient, memo) {
-    treatmentEntryCounter++;
-    const list = document.getElementById('treatment-batch-list');
-    const entryId = `treatment-entry-${treatmentEntryCounter}`;
-
-    const entry = document.createElement('div');
-    entry.className = 'batch-entry';
-    entry.id = entryId;
-    entry.innerHTML = `
-        <div class="batch-entry-header">
-            <span class="batch-entry-number">${list.children.length + 1}</span>
-            <button type="button" class="btn-remove-entry" onclick="removeTreatmentEntry('${entryId}')">✕</button>
-        </div>
-        <div class="form-group">
-            <label>患者 <span class="required">*</span></label>
-            <select class="form-control entry-patient" onchange="autoSaveTreatmentDraft()">
-                ${createPatientSelectHtml(patient || '')}
-            </select>
-        </div>
-        <div class="form-group">
-            <label>メモ</label>
-            <textarea class="form-control entry-memo" rows="2" placeholder="メモを入力..." oninput="autoSaveTreatmentDraft()">${memo || ''}</textarea>
-        </div>
-    `;
-
-    list.appendChild(entry);
-    autoSaveTreatmentDraft();
-}
-
-/**
- * 施術記録エントリーを削除
- */
-function removeTreatmentEntry(entryId) {
-    const entry = document.getElementById(entryId);
-    if (entry) {
-        entry.remove();
-        renumberEntries('treatment-batch-list');
-        autoSaveTreatmentDraft();
-    }
-}
-
-/**
- * 施術記録を一括保存
- */
-async function saveBatchTreatment() {
+async function saveTreatment() {
     const date = document.getElementById('treatment-date').value;
+    const patient = document.getElementById('treatment-patient').value;
     const staff = document.getElementById('treatment-staff').value;
+    const memo = document.getElementById('treatment-memo').value;
 
-    if (!date || !staff) {
-        showError('日付と担当者を選択してください');
+    if (!date || !patient || !staff) {
+        showError('日付、患者、担当者は必須です');
         return;
     }
 
-    const entries = document.querySelectorAll('#treatment-batch-list .batch-entry');
-    if (entries.length === 0) {
-        showError('記録を追加してください');
-        return;
-    }
-
-    // バリデーション
-    const records = [];
-    let hasError = false;
-    entries.forEach((entry, index) => {
-        const patient = entry.querySelector('.entry-patient').value;
-        const memo = entry.querySelector('.entry-memo').value;
-
-        if (!patient) {
-            showError(`記録${index + 1}: 患者を選択してください`);
-            hasError = true;
-            return;
-        }
-
-        records.push({
-            date,
-            patientId: '',
-            patientName: patient,
-            staff,
-            memo,
-            timestamp: getTimestamp(),
-            notionSynced: ''
-        });
-    });
-
-    if (hasError) return;
+    const record = {
+        date,
+        patientId: '',
+        patientName: patient,
+        staff,
+        memo,
+        timestamp: getTimestamp(),
+        notionSynced: ''
+    };
 
     try {
-        showLoading(`${records.length}件を保存中...`);
+        // 保存処理実行
+        const result = await saveTreatmentRecord(record);
 
-        let offlineCount = 0;
-        let successCount = 0;
-
-        for (const record of records) {
-            const result = await saveTreatmentRecord(record);
-            if (result.offline) {
-                offlineCount++;
-            } else {
-                successCount++;
-            }
-        }
-
-        hideLoading();
-
-        if (offlineCount > 0) {
-            showToast(`${offlineCount}件を一時保存しました（後で自動送信）`, 3000);
+        if (result.offline) {
+            showToast('電波がありません。一時保存しました（後で自動送信されます）', 3000);
         } else {
-            showToast(`${successCount}件を保存しました`, 2000);
+            showToast('保存しました', 2000);
         }
 
-        // リストをクリア（日付・担当者は維持）
-        document.getElementById('treatment-batch-list').innerHTML = '';
-        treatmentEntryCounter = 0;
-        addTreatmentEntry();
-
-        // 一時保存をクリア
-        clearTreatmentDraft();
-
+        // フォームクリア
+        document.getElementById('treatment-patient').value = '';
+        document.getElementById('treatment-staff').value = '';
+        document.getElementById('treatment-memo').value = '';
+        document.getElementById('treatment-date').value = getToday();
     } catch (error) {
-        hideLoading();
-        console.error('Batch save failed:', error);
+        console.error('Save failed:', error);
         showError('保存に失敗しました');
     }
 }
 
-/**
- * 施術記録をクリア
- */
-function clearTreatmentBatch() {
-    if (window.confirm('入力中のデータを削除しますか？')) {
-        document.getElementById('treatment-batch-list').innerHTML = '';
-        treatmentEntryCounter = 0;
-        addTreatmentEntry();
-        clearTreatmentDraft();
-    }
-}
-
-/**
- * 施術記録の一時保存（自動）
- */
-function autoSaveTreatmentDraft() {
-    const date = document.getElementById('treatment-date').value;
-    const staff = document.getElementById('treatment-staff').value;
-
-    const entries = [];
-    document.querySelectorAll('#treatment-batch-list .batch-entry').forEach(entry => {
-        entries.push({
-            patient: entry.querySelector('.entry-patient').value,
-            memo: entry.querySelector('.entry-memo').value
-        });
-    });
-
-    saveTreatmentDraft({ date, staff, entries });
-}
-
 function setupTreatmentScreen() {
-    document.getElementById('btn-add-treatment-entry').addEventListener('click', () => addTreatmentEntry());
-    document.getElementById('btn-save-batch-treatment').addEventListener('click', saveBatchTreatment);
-    document.getElementById('btn-clear-treatment').addEventListener('click', clearTreatmentBatch);
+    document.getElementById('btn-save-treatment').addEventListener('click', saveTreatment);
     document.getElementById('btn-back-treatment').addEventListener('click', () => {
         showScreen('home');
     });
-
-    // 共通項目変更時に自動保存
-    document.getElementById('treatment-date').addEventListener('change', autoSaveTreatmentDraft);
-    document.getElementById('treatment-staff').addEventListener('change', autoSaveTreatmentDraft);
 }
 
-// =============================================
-// 営業記録入力画面（一括入力）
-// =============================================
+// === 営業記録入力画面 ===
 
 function checkPasswordAndShowSales() {
+    // パスワードロックチェック
     if (passwordLockUntil && new Date() < passwordLockUntil) {
         const remainingSeconds = Math.ceil((passwordLockUntil - new Date()) / 1000);
         showError(`${remainingSeconds}秒後に再試行してください`);
@@ -305,7 +170,7 @@ function checkPasswordAndShowSales() {
     const input = prompt('パスワードを入力してください:');
 
     if (input === null) {
-        return;
+        return; // キャンセル
     }
 
     if (verifyPassword(input)) {
@@ -315,7 +180,7 @@ function checkPasswordAndShowSales() {
         passwordAttempts++;
 
         if (passwordAttempts >= 3) {
-            passwordLockUntil = new Date(Date.now() + 30000);
+            passwordLockUntil = new Date(Date.now() + 30000); // 30秒ロック
             showError('3回失敗しました。30秒後に再試行してください');
             passwordAttempts = 0;
         } else {
@@ -327,23 +192,6 @@ function checkPasswordAndShowSales() {
 function initSalesScreen() {
     document.getElementById('sales-date').value = getToday();
     populateSalesStaffSelect();
-
-    // 一時保存データの復元
-    const draft = getSalesDraft();
-    if (draft) {
-        if (draft.date) document.getElementById('sales-date').value = draft.date;
-        if (draft.staff) document.getElementById('sales-staff').value = draft.staff;
-        if (draft.entries && draft.entries.length > 0) {
-            draft.entries.forEach(entry => {
-                addSalesEntry(entry.careManager, entry.content);
-            });
-        }
-    }
-
-    // エントリーがなければ1つ追加
-    if (document.querySelectorAll('#sales-batch-list .batch-entry').length === 0) {
-        addSalesEntry();
-    }
 }
 
 function populateSalesStaffSelect() {
@@ -360,189 +208,56 @@ function populateSalesStaffSelect() {
     });
 }
 
-/**
- * 営業記録エントリーを追加
- */
-function addSalesEntry(careManager, content) {
-    salesEntryCounter++;
-    const list = document.getElementById('sales-batch-list');
-    const entryId = `sales-entry-${salesEntryCounter}`;
-
-    const entry = document.createElement('div');
-    entry.className = 'batch-entry';
-    entry.id = entryId;
-    entry.innerHTML = `
-        <div class="batch-entry-header">
-            <span class="batch-entry-number">${list.children.length + 1}</span>
-            <button type="button" class="btn-remove-entry" onclick="removeSalesEntry('${entryId}')">✕</button>
-        </div>
-        <div class="form-group">
-            <label>ケアマネ名 <span class="required">*</span></label>
-            <input type="text" class="form-control entry-care-manager" placeholder="ケアマネ名を入力" value="${careManager || ''}" oninput="autoSaveSalesDraft()">
-        </div>
-        <div class="form-group">
-            <label>内容</label>
-            <textarea class="form-control entry-content" rows="3" placeholder="営業内容を入力..." oninput="autoSaveSalesDraft()">${content || ''}</textarea>
-        </div>
-    `;
-
-    list.appendChild(entry);
-    autoSaveSalesDraft();
-}
-
-/**
- * 営業記録エントリーを削除
- */
-function removeSalesEntry(entryId) {
-    const entry = document.getElementById(entryId);
-    if (entry) {
-        entry.remove();
-        renumberEntries('sales-batch-list');
-        autoSaveSalesDraft();
-    }
-}
-
-/**
- * 営業記録を一括保存
- */
-async function saveBatchSales() {
+async function saveSales() {
     const date = document.getElementById('sales-date').value;
+    const careManager = document.getElementById('sales-care-manager').value;
     const staff = document.getElementById('sales-staff').value;
+    const content = document.getElementById('sales-content').value;
 
-    if (!date || !staff) {
-        showError('日付と営業担当を選択してください');
+    if (!date || !careManager || !staff) {
+        showError('日付、ケアマネ名、営業担当は必須です');
         return;
     }
 
-    const entries = document.querySelectorAll('#sales-batch-list .batch-entry');
-    if (entries.length === 0) {
-        showError('記録を追加してください');
-        return;
-    }
-
-    const records = [];
-    let hasError = false;
-    entries.forEach((entry, index) => {
-        const careManager = entry.querySelector('.entry-care-manager').value.trim();
-        const content = entry.querySelector('.entry-content').value;
-
-        if (!careManager) {
-            showError(`記録${index + 1}: ケアマネ名を入力してください`);
-            hasError = true;
-            return;
-        }
-
-        records.push({
-            date,
-            careManagerId: '',
-            officeName: '',
-            careManagerName: careManager,
-            staff,
-            content,
-            timestamp: getTimestamp(),
-            notionSynced: ''
-        });
-    });
-
-    if (hasError) return;
+    const record = {
+        date,
+        careManagerId: '',
+        officeName: '',
+        careManagerName: careManager,
+        staff,
+        content,
+        timestamp: getTimestamp(),
+        notionSynced: ''
+    };
 
     try {
-        showLoading(`${records.length}件を保存中...`);
+        const result = await saveSalesRecord(record);
 
-        let offlineCount = 0;
-        let successCount = 0;
-
-        for (const record of records) {
-            const result = await saveSalesRecord(record);
-            if (result.offline) {
-                offlineCount++;
-            } else {
-                successCount++;
-            }
-        }
-
-        hideLoading();
-
-        if (offlineCount > 0) {
-            showToast(`${offlineCount}件を一時保存しました（後で自動送信）`, 3000);
+        if (result.offline) {
+            showToast('電波がありません。一時保存しました（後で自動送信されます）', 3000);
         } else {
-            showToast(`${successCount}件を保存しました`, 2000);
+            showToast('保存しました', 2000);
         }
 
-        // リストをクリア（日付・担当者は維持）
-        document.getElementById('sales-batch-list').innerHTML = '';
-        salesEntryCounter = 0;
-        addSalesEntry();
-
-        clearSalesDraft();
-
+        // フォームクリア
+        document.getElementById('sales-care-manager').value = '';
+        document.getElementById('sales-staff').value = '';
+        document.getElementById('sales-content').value = '';
+        document.getElementById('sales-date').value = getToday();
     } catch (error) {
-        hideLoading();
-        console.error('Batch save failed:', error);
+        console.error('Save failed:', error);
         showError('保存に失敗しました');
     }
 }
 
-/**
- * 営業記録をクリア
- */
-function clearSalesBatch() {
-    if (window.confirm('入力中のデータを削除しますか？')) {
-        document.getElementById('sales-batch-list').innerHTML = '';
-        salesEntryCounter = 0;
-        addSalesEntry();
-        clearSalesDraft();
-    }
-}
-
-/**
- * 営業記録の一時保存（自動）
- */
-function autoSaveSalesDraft() {
-    const date = document.getElementById('sales-date').value;
-    const staff = document.getElementById('sales-staff').value;
-
-    const entries = [];
-    document.querySelectorAll('#sales-batch-list .batch-entry').forEach(entry => {
-        entries.push({
-            careManager: entry.querySelector('.entry-care-manager').value,
-            content: entry.querySelector('.entry-content').value
-        });
-    });
-
-    saveSalesDraft({ date, staff, entries });
-}
-
 function setupSalesScreen() {
-    document.getElementById('btn-add-sales-entry').addEventListener('click', () => addSalesEntry());
-    document.getElementById('btn-save-batch-sales').addEventListener('click', saveBatchSales);
-    document.getElementById('btn-clear-sales').addEventListener('click', clearSalesBatch);
+    document.getElementById('btn-save-sales').addEventListener('click', saveSales);
     document.getElementById('btn-back-sales').addEventListener('click', () => {
         showScreen('home');
     });
-
-    document.getElementById('sales-date').addEventListener('change', autoSaveSalesDraft);
-    document.getElementById('sales-staff').addEventListener('change', autoSaveSalesDraft);
 }
 
-// =============================================
-// 共通ユーティリティ
-// =============================================
-
-/**
- * エントリーの番号を振り直す
- */
-function renumberEntries(listId) {
-    const entries = document.querySelectorAll(`#${listId} .batch-entry`);
-    entries.forEach((entry, index) => {
-        const numEl = entry.querySelector('.batch-entry-number');
-        if (numEl) numEl.textContent = index + 1;
-    });
-}
-
-// =============================================
-// 記録閲覧画面
-// =============================================
+// === 記録閲覧画面 ===
 
 let currentViewTab = 'treatment';
 
@@ -553,16 +268,19 @@ function initViewScreen() {
 function showViewTab(tab) {
     currentViewTab = tab;
 
+    // タブボタンの切り替え
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     document.getElementById(`tab-${tab}`).classList.add('active');
 
+    // タブコンテンツの切り替え
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
     document.getElementById(`${tab}-tab`).classList.add('active');
 
+    // 営業記録タブはパスワード確認
     if (tab === 'sales') {
         checkPasswordForSalesView();
     }
@@ -615,6 +333,7 @@ function displayTreatmentRecords(records) {
         return;
     }
 
+    // 日付降順でソート
     records.sort((a, b) => b.date.localeCompare(a.date));
 
     records.forEach(record => {
@@ -682,6 +401,7 @@ function setupViewScreen() {
         showScreen('home');
     });
 
+    // 患者フィルター設定
     const filterSelect = document.getElementById('filter-treatment-patient');
     const patients = getPatients();
     filterSelect.innerHTML = '<option value="all">全て</option>';
@@ -693,11 +413,10 @@ function setupViewScreen() {
     });
 }
 
-// =============================================
-// 設定画面
-// =============================================
+// === 設定画面 ===
 
 function initSettingsScreen() {
+    // 現在の設定値を読み込み
     document.getElementById('setting-notion-api-key').value = getNotionApiKey();
     document.getElementById('setting-notion-patient-db').value = getNotionPatientDb();
     document.getElementById('setting-notion-care-manager-db').value = getNotionCareManagerDb();
@@ -782,13 +501,13 @@ async function reloadPatients() {
 }
 
 function clearCacheData() {
-    if (window.confirm('キャッシュをクリアしますか?')) {
+    if (confirm('キャッシュをクリアしますか?')) {
         clearCache();
     }
 }
 
 function resetAllData() {
-    if (window.confirm('全データをリセットしますか?\nこの操作は取り消せません。')) {
+    if (confirm('全データをリセットしますか?\nこの操作は取り消せません。')) {
         clearAllStorage();
         showToast('全データをリセットしました');
         setTimeout(() => {

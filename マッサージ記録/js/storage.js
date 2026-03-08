@@ -9,9 +9,7 @@ const STORAGE_KEYS = {
     NOTION_CARE_MANAGER_DB: 'notion_care_manager_db',
     GAS_SPREADSHEET_URL: 'gas_spreadsheet_url',
     GAS_API_URL: 'gas_api_url',
-    OFFLINE_QUEUE: 'offline_queue',
-    TREATMENT_DRAFT: 'treatment_draft',
-    SALES_DRAFT: 'sales_draft'
+    OFFLINE_QUEUE: 'offline_queue'
 };
 
 /**
@@ -106,6 +104,7 @@ function savePassword(password) {
 function getPassword() {
     const encrypted = getFromStorage(STORAGE_KEYS.PASSWORD);
     if (!encrypted) {
+        // デフォルトパスワード
         savePassword('0000');
         return '0000';
     }
@@ -182,32 +181,6 @@ function removeFromOfflineQueue(itemId) {
 
 function clearOfflineQueue() {
     return saveToStorage(STORAGE_KEYS.OFFLINE_QUEUE, []);
-}
-
-// === 一時保存（一括入力用） ===
-
-function saveTreatmentDraft(data) {
-    return saveToStorage(STORAGE_KEYS.TREATMENT_DRAFT, data);
-}
-
-function getTreatmentDraft() {
-    return getFromStorage(STORAGE_KEYS.TREATMENT_DRAFT, null);
-}
-
-function clearTreatmentDraft() {
-    return removeFromStorage(STORAGE_KEYS.TREATMENT_DRAFT);
-}
-
-function saveSalesDraft(data) {
-    return saveToStorage(STORAGE_KEYS.SALES_DRAFT, data);
-}
-
-function getSalesDraft() {
-    return getFromStorage(STORAGE_KEYS.SALES_DRAFT, null);
-}
-
-function clearSalesDraft() {
-    return removeFromStorage(STORAGE_KEYS.SALES_DRAFT);
 }
 
 // === キャッシュ管理 ===

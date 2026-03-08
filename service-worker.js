@@ -1,4 +1,4 @@
-const CACHE_NAME = 'massage-record-v3';
+const CACHE_NAME = 'massage-record-v4';
 const urlsToCache = [
     './',
     './index.html',
@@ -12,6 +12,7 @@ const urlsToCache = [
     './icons/icon-192.png',
     './icons/icon-512.png'
 ];
+
 // インストール時にキャッシュ
 self.addEventListener('install', event => {
     event.waitUntil(
@@ -20,6 +21,7 @@ self.addEventListener('install', event => {
     );
     self.skipWaiting();
 });
+
 // 古いキャッシュを削除
 self.addEventListener('activate', event => {
     event.waitUntil(
@@ -35,12 +37,14 @@ self.addEventListener('activate', event => {
     );
     self.clients.claim();
 });
+
 // ネットワーク優先、フォールバックでキャッシュ
 self.addEventListener('fetch', event => {
     // POST リクエストはキャッシュしない
     if (event.request.method !== 'GET') {
         return;
     }
+
     event.respondWith(
         fetch(event.request)
             .then(response => {
@@ -56,12 +60,14 @@ self.addEventListener('fetch', event => {
             })
     );
 });
+
 // バックグラウンド同期（将来的な拡張用）
 self.addEventListener('sync', event => {
     if (event.tag === 'sync-records') {
         event.waitUntil(syncRecords());
     }
 });
+
 async function syncRecords() {
     // オフラインキューの同期処理
     // 実装は app.js 側で管理

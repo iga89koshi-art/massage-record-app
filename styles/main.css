@@ -4,6 +4,7 @@
     padding: 0;
     box-sizing: border-box;
 }
+
 :root {
     /* カラーパレット */
     --primary-color: #2196F3;
@@ -15,30 +16,36 @@
     --warning-color: #FF9800;
     --danger-color: #F44336;
     --neutral-color: #607D8B;
+
     /* グレースケール */
     --bg-color: #F5F5F5;
     --surface-color: #FFFFFF;
     --text-primary: #212121;
     --text-secondary: #757575;
     --border-color: #E0E0E0;
+
     /* シャドウ */
     --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
     --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
     --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.2);
+
     /* スペーシング */
     --spacing-xs: 4px;
     --spacing-sm: 8px;
     --spacing-md: 16px;
     --spacing-lg: 24px;
     --spacing-xl: 32px;
+
     /* ボーダー半径 */
     --radius-sm: 4px;
     --radius-md: 8px;
     --radius-lg: 12px;
     --radius-xl: 16px;
+
     /* トランジション */
     --transition: all 0.3s ease;
 }
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg-color);
@@ -47,6 +54,7 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
+
 /* コンテナ */
 .container {
     max-width: 600px;
@@ -54,46 +62,55 @@ body {
     padding: var(--spacing-md);
     min-height: 100vh;
 }
+
 /* 画面管理 */
 .screen {
     display: none;
     animation: fadeIn 0.3s ease;
 }
+
 .screen.active {
     display: block;
 }
+
 @keyframes fadeIn {
     from {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
+
 /* ヘッダー */
 .app-header {
     text-align: center;
     padding: var(--spacing-xl) 0;
 }
+
 .app-header h1 {
     font-size: 28px;
     font-weight: 700;
     color: var(--primary-color);
     margin-bottom: var(--spacing-sm);
 }
+
 .screen-header {
     text-align: center;
     padding: var(--spacing-lg) 0;
     border-bottom: 2px solid var(--primary-color);
     margin-bottom: var(--spacing-lg);
 }
+
 .screen-header h2 {
     font-size: 24px;
     font-weight: 600;
     color: var(--primary-color);
 }
+
 /* ボタングリッド（ホーム画面） */
 .button-grid {
     display: grid;
@@ -101,6 +118,7 @@ body {
     gap: var(--spacing-md);
     margin-top: var(--spacing-xl);
 }
+
 .menu-btn {
     display: flex;
     flex-direction: column;
@@ -117,37 +135,46 @@ body {
     font-size: 16px;
     font-weight: 600;
 }
+
 .menu-btn:hover {
     transform: translateY(-4px);
     box-shadow: var(--shadow-lg);
 }
+
 .menu-btn:active {
     transform: translateY(-2px);
 }
+
 .menu-btn .icon {
     font-size: 48px;
     margin-bottom: var(--spacing-sm);
 }
+
 .menu-btn .label {
     font-size: 18px;
     font-weight: 600;
 }
+
 .menu-btn.primary {
     background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
     color: white;
 }
+
 .menu-btn.secondary {
     background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
     color: white;
 }
+
 .menu-btn.info {
     background: linear-gradient(135deg, var(--info-color), #0097A7);
     color: white;
 }
+
 .menu-btn.neutral {
     background: linear-gradient(135deg, var(--neutral-color), #455A64);
     color: white;
 }
+
 /* フォーム */
 .input-form {
     background: var(--surface-color);
@@ -155,9 +182,11 @@ body {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
 }
+
 .form-group {
     margin-bottom: var(--spacing-lg);
 }
+
 .form-group label {
     display: block;
     margin-bottom: var(--spacing-sm);
@@ -165,9 +194,11 @@ body {
     color: var(--text-primary);
     font-size: 14px;
 }
+
 .form-group .required {
     color: var(--danger-color);
 }
+
 .form-control {
     width: 100%;
     padding: 12px 16px;
@@ -178,15 +209,18 @@ body {
     transition: var(--transition);
     background: var(--surface-color);
 }
+
 .form-control:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px var(--primary-light);
 }
+
 textarea.form-control {
     resize: vertical;
     min-height: 80px;
 }
+
 select.form-control {
     cursor: pointer;
     appearance: none;
@@ -195,6 +229,7 @@ select.form-control {
     background-position: right 12px center;
     padding-right: 36px;
 }
+
 /* --------- 日付入力欄の修正（iOS Safari対応） --------- */
 input[type="date"].form-control {
     -webkit-appearance: none;
@@ -209,31 +244,38 @@ input[type="date"].form-control {
     text-align: left;
     overflow: hidden;
 }
+
 input[type="date"].form-control::-webkit-date-and-time-value {
     text-align: left;
     margin: 0;
     padding: 0;
 }
+
 input[type="date"].form-control::-webkit-datetime-edit {
     padding: 0;
     display: flex;
     align-items: center;
 }
+
 input[type="date"].form-control::-webkit-datetime-edit-fields-wrapper {
     padding: 0;
 }
+
 input[type="date"].form-control::-webkit-datetime-edit-text,
 input[type="date"].form-control::-webkit-datetime-edit-month-field,
 input[type="date"].form-control::-webkit-datetime-edit-day-field,
 input[type="date"].form-control::-webkit-datetime-edit-year-field {
     padding: 0 1px;
 }
+
 input[type="date"].form-control::-webkit-calendar-picker-indicator {
     margin-left: auto;
     opacity: 0.6;
     cursor: pointer;
 }
+
 /* ---------------------------------------------------- */
+
 /* ボタン */
 .btn {
     padding: 14px 28px;
@@ -246,61 +288,77 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     min-width: 120px;
     box-shadow: var(--shadow-sm);
 }
+
 .btn:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
 }
+
 .btn:active {
     transform: translateY(0);
 }
+
 .btn-primary {
     background: var(--primary-color);
     color: white;
 }
+
 .btn-primary:hover {
     background: var(--primary-dark);
 }
+
 .btn-secondary {
     background: var(--neutral-color);
     color: white;
 }
+
 .btn-secondary:hover {
     background: #455A64;
 }
+
 .btn-info {
     background: var(--info-color);
     color: white;
 }
+
 .btn-info:hover {
     background: #0097A7;
 }
+
 .btn-warning {
     background: var(--warning-color);
     color: white;
 }
+
 .btn-warning:hover {
     background: #F57C00;
 }
+
 .btn-danger {
     background: var(--danger-color);
     color: white;
 }
+
 .btn-danger:hover {
     background: #D32F2F;
 }
+
 .button-group {
     display: flex;
     gap: var(--spacing-md);
     margin-top: var(--spacing-xl);
 }
+
 .button-group .btn {
     flex: 1;
 }
+
 .button-group-inline {
     display: flex;
     gap: var(--spacing-sm);
     flex-wrap: wrap;
 }
+
 /* タブ */
 .tabs {
     display: flex;
@@ -308,6 +366,7 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     margin-bottom: var(--spacing-lg);
     border-bottom: 2px solid var(--border-color);
 }
+
 .tab-btn {
     flex: 1;
     padding: 12px 20px;
@@ -321,20 +380,25 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     border-bottom: 3px solid transparent;
     margin-bottom: -2px;
 }
+
 .tab-btn:hover {
     color: var(--primary-color);
 }
+
 .tab-btn.active {
     color: var(--primary-color);
     border-bottom-color: var(--primary-color);
 }
+
 .tab-content {
     display: none;
 }
+
 .tab-content.active {
     display: block;
     animation: fadeIn 0.3s ease;
 }
+
 /* フィルターセクション */
 .filter-section {
     background: var(--surface-color);
@@ -343,12 +407,15 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     box-shadow: var(--shadow-sm);
     margin-bottom: var(--spacing-lg);
 }
+
 .filter-section .form-group {
     margin-bottom: var(--spacing-md);
 }
+
 .filter-section .btn {
     width: 100%;
 }
+
 /* テーブル */
 .records-table {
     background: var(--surface-color);
@@ -357,31 +424,38 @@ input[type="date"].form-control::-webkit-calendar-picker-indicator {
     overflow: hidden;
     overflow-x: auto;
 }
+
 table {
     width: 100%;
     border-collapse: collapse;
 }
+
 thead {
     background: var(--primary-color);
     color: white;
 }
+
 thead th {
     padding: 12px 8px;
     text-align: left;
     font-weight: 600;
     font-size: 14px;
 }
+
 tbody td {
     padding: 12px 8px;
     border-bottom: 1px solid var(--border-color);
     font-size: 14px;
 }
+
 tbody tr:last-child td {
     border-bottom: none;
 }
+
 tbody tr:hover {
     background: var(--bg-color);
 }
+
 /* 設定セクション */
 .settings-section {
     background: var(--surface-color);
@@ -390,6 +464,7 @@ tbody tr:hover {
     box-shadow: var(--shadow-sm);
     margin-bottom: var(--spacing-lg);
 }
+
 .settings-section h3 {
     font-size: 18px;
     font-weight: 600;
@@ -398,6 +473,7 @@ tbody tr:hover {
     padding-bottom: var(--spacing-sm);
     border-bottom: 2px solid var(--primary-light);
 }
+
 /* ローディング */
 .loader {
     position: fixed;
@@ -412,9 +488,11 @@ tbody tr:hover {
     flex-direction: column;
     z-index: 9999;
 }
+
 .loader.active {
     display: flex;
 }
+
 .loader-spinner {
     width: 50px;
     height: 50px;
@@ -423,17 +501,20 @@ tbody tr:hover {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
+
 @keyframes spin {
     to {
         transform: rotate(360deg);
     }
 }
+
 .loader p {
     color: white;
     margin-top: var(--spacing-md);
     font-size: 16px;
     font-weight: 600;
 }
+
 /* トースト通知 */
 .toast {
     position: fixed;
@@ -453,32 +534,174 @@ tbody tr:hover {
     max-width: 90%;
     text-align: center;
 }
+
 .toast.show {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
+
 /* レスポンシブ */
 @media (min-width: 768px) {
     .button-grid {
         grid-template-columns: 1fr 1fr;
     }
+
     .container {
         padding: var(--spacing-xl);
     }
 }
+
 /* タッチ対応 */
 @media (hover: none) {
+
     .menu-btn:hover,
     .btn:hover {
         transform: none;
     }
+
     .menu-btn:active {
         transform: scale(0.98);
     }
+
     .btn:active {
         transform: scale(0.98);
     }
 }
+
+/* --------- 一括入力UI --------- */
+
+/* 共通項目エリア */
+.batch-common {
+    background: var(--surface-color);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--spacing-md);
+    border-left: 4px solid var(--primary-color);
+}
+
+/* 記録リストコンテナ */
+.batch-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+/* 各記録カード */
+.batch-entry {
+    background: var(--surface-color);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    position: relative;
+    animation: fadeIn 0.3s ease;
+}
+
+.batch-entry .form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.batch-entry .form-group:last-child {
+    margin-bottom: 0;
+}
+
+/* カード上部（番号 + 削除ボタン） */
+.batch-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.batch-entry-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+/* 削除ボタン（小さめ、赤系） */
+.btn-remove-entry {
+    background: none;
+    border: 1px solid #ffcdd2;
+    color: var(--danger-color);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    transition: var(--transition);
+    padding: 0;
+}
+
+.btn-remove-entry:active {
+    background: #ffebee;
+    transform: scale(0.95);
+}
+
+/* 「＋患者を追加」ボタン */
+.btn-add-entry {
+    width: 100%;
+    padding: 14px;
+    background: var(--surface-color);
+    color: var(--primary-color);
+    border: 2px dashed var(--primary-color);
+    border-radius: var(--radius-lg);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-bottom: var(--spacing-md);
+}
+
+.btn-add-entry:active {
+    background: var(--primary-light);
+    transform: scale(0.98);
+}
+
+/* 「まとめて保存」ボタン */
+.btn-save-batch {
+    flex: 2;
+    background: var(--secondary-color) !important;
+    color: white !important;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 16px !important;
+    box-shadow: 0 4px 8px rgba(76, 175, 80, 0.3);
+}
+
+.btn-save-batch:active {
+    background: var(--secondary-dark) !important;
+}
+
+/* 「クリア」ボタン */
+.btn-clear-batch {
+    flex: 1;
+    background: var(--neutral-color) !important;
+    color: white !important;
+}
+
+/* 操作ボタングループ */
+.batch-actions {
+    margin-bottom: var(--spacing-sm);
+}
+
+/* ----------------------------------- */
+
 /* ダークモード対応（将来的な拡張用） */
 @media (prefers-color-scheme: dark) {
     /* 必要に応じてダークモードスタイルを追加 */
