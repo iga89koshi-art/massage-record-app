@@ -281,10 +281,59 @@ function autoSaveTreatmentDraft() {
     saveTreatmentDraft({ date, staff, entries });
 }
 
+/**
+ * 先週の施術記録をコピー
+ */
+async function copyLastWeekTreatment() {
+    const staff = document.getElementById('treatment-staff').value;
+    const baseDate = document.getElementById('treatment-date').value;
+
+    if (!staff) {
+        showError('担当者を選択してください');
+        return;
+    }
+
+    try {
+        showLoading('先週の記録を取得中...');
+        const result = await getLastWeekTreatmentPatients(staff, baseDate);
+        hideLoading();
+
+        if (!result.success) {
+            showError('取得に失敗しました');
+            return;
+        }
+
+        if (!result.data || result.data.length === 0) {
+            showToast('該当する記録がありません', 3000);
+            return;
+        }
+
+        // 既存エントリーが空の1件だけなら削除
+        const existingEntries = document.querySelectorAll('#treatment-batch-list .batch-entry');
+        if (existingEntries.length === 1) {
+            const firstPatient = existingEntries[0].querySelector('.entry-patient').value;
+            if (!firstPatient) {
+                existingEntries[0].remove();
+            }
+        }
+
+        result.data.forEach(item => {
+            addTreatmentEntry(item.name, item.memo);
+        });
+
+        showToast(`${result.data.length}件の記録を追加しました`, 2000);
+    } catch (error) {
+        hideLoading();
+        console.error('Copy last week failed:', error);
+        showError('取得に失敗しました');
+    }
+}
+
 function setupTreatmentScreen() {
     document.getElementById('btn-add-treatment-entry').addEventListener('click', () => addTreatmentEntry());
     document.getElementById('btn-save-batch-treatment').addEventListener('click', saveBatchTreatment);
     document.getElementById('btn-clear-treatment').addEventListener('click', clearTreatmentBatch);
+    document.getElementById('btn-copy-last-week-treatment').addEventListener('click', copyLastWeekTreatment);
     document.getElementById('btn-back-treatment').addEventListener('click', () => {
         showScreen('home');
     });
@@ -519,10 +568,58 @@ function autoSaveSalesDraft() {
     saveSalesDraft({ date, staff, entries });
 }
 
+/**
+ * 先週の営業記録をコピー
+ */
+async function copyLastWeekSales() {
+    const staff = document.getElementById('sales-staff').value;
+    const baseDate = document.getElementById('sales-date').value;
+
+    if (!staff) {
+        showError('営業担当を選択してください');
+        return;
+    }
+
+    try {
+        showLoading('先週の記録を取得中...');
+        const result = await getLastWeekSalesContacts(staff, baseDate);
+        hideLoading();
+
+        if (!result.success) {
+            showError('取得に失敗しました');
+            return;
+        }
+
+        if (!result.data || result.data.length === 0) {
+            showToast('該当する記録がありません', 3000);
+            return;
+        }
+
+        const existingEntries = document.querySelectorAll('#sales-batch-list .batch-entry');
+        if (existingEntries.length === 1) {
+            const firstCM = existingEntries[0].querySelector('.entry-care-manager').value;
+            if (!firstCM) {
+                existingEntries[0].remove();
+            }
+        }
+
+        result.data.forEach(item => {
+            addSalesEntry(item.name, item.memo);
+        });
+
+        showToast(`${result.data.length}件の記録を追加しました`, 2000);
+    } catch (error) {
+        hideLoading();
+        console.error('Copy last week failed:', error);
+        showError('取得に失敗しました');
+    }
+}
+
 function setupSalesScreen() {
     document.getElementById('btn-add-sales-entry').addEventListener('click', () => addSalesEntry());
     document.getElementById('btn-save-batch-sales').addEventListener('click', saveBatchSales);
     document.getElementById('btn-clear-sales').addEventListener('click', clearSalesBatch);
+    document.getElementById('btn-copy-last-week-sales').addEventListener('click', copyLastWeekSales);
     document.getElementById('btn-back-sales').addEventListener('click', () => {
         showScreen('home');
     });

@@ -673,6 +673,37 @@ tbody tr:hover {
     transform: scale(0.98);
 }
 
+/* ボタン横並びエリア */
+.batch-list-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: var(--spacing-md);
+}
+
+.batch-list-actions .btn-add-entry {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+/* 「先週の記録をコピー」ボタン */
+.btn-copy-last-week {
+    flex: 1;
+    padding: 14px 8px;
+    background: var(--surface-color);
+    color: #e67e22;
+    border: 2px dashed #e67e22;
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-copy-last-week:active {
+    background: #fef5e7;
+    transform: scale(0.98);
+}
+
 /* 「まとめて保存」ボタン */
 .btn-save-batch {
     flex: 2;

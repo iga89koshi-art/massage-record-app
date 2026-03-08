@@ -110,6 +110,20 @@ async function getSalesRecords(filters = {}) {
     );
 }
 
+// === 先週の記録コピー ===
+
+async function getLastWeekTreatmentPatients(staff, baseDate) {
+    return await callApiWithRetry(() =>
+        callGasApi('getLastWeekTreatments', { staff, baseDate })
+    );
+}
+
+async function getLastWeekSalesContacts(staff, baseDate) {
+    return await callApiWithRetry(() =>
+        callGasApi('getLastWeekSales', { staff, baseDate })
+    );
+}
+
 // === 担当者マスタ ===
 
 async function fetchStaffFromGas() {
