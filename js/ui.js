@@ -83,9 +83,23 @@ function initTreatmentScreen() {
         if (draft.date) document.getElementById('treatment-date').value = draft.date;
         if (draft.staff) document.getElementById('treatment-staff').value = draft.staff;
         if (draft.entries && draft.entries.length > 0) {
+            // 一旦リストを空にする（重複追加防止）
+            document.getElementById('treatment-batch-list').innerHTML = '';
+            treatmentEntryCounter = 0;
+
+            let addedCount = 0;
             draft.entries.forEach(entry => {
-                addTreatmentEntry(entry.patient, entry.memo);
+                // 患者名もメモも空のものは復元しない（無限増え防止）
+                if (entry.patient || entry.memo) {
+                    addTreatmentEntry(entry.patient, entry.memo);
+                    addedCount++;
+                }
             });
+
+            // もし有効なエントリーが1つもなかったら空の枠を1つ追加
+            if (addedCount === 0) {
+                addTreatmentEntry();
+            }
         }
     }
 
@@ -386,9 +400,23 @@ function initSalesScreen() {
         if (draft.date) document.getElementById('sales-date').value = draft.date;
         if (draft.staff) document.getElementById('sales-staff').value = draft.staff;
         if (draft.entries && draft.entries.length > 0) {
+            // 一旦リストを空にする（重複追加防止）
+            document.getElementById('sales-batch-list').innerHTML = '';
+            salesEntryCounter = 0;
+
+            let addedCount = 0;
             draft.entries.forEach(entry => {
-                addSalesEntry(entry.careManager, entry.content);
+                // ケアマネ名も内容も空のものは復元しない
+                if (entry.careManager || entry.content) {
+                    addSalesEntry(entry.careManager, entry.content);
+                    addedCount++;
+                }
             });
+
+            // 有効なエントリーが1つもなかったら空の枠を1つ追加
+            if (addedCount === 0) {
+                addSalesEntry();
+            }
         }
     }
 
