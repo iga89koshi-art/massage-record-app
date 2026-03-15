@@ -154,13 +154,47 @@ async function fetchPatientsFromNotion() {
     );
 
     if (result.success && result.data) {
-        // 患者名のみ抽出してソート
-        const patients = result.data.map(item => ({
-            id: item.id,
-            name: item.properties?.患者名?.title?.[0]?.plain_text || '名前なし'
-        }));
+        const patients = result.data.map(item => {
+            // 1. 名前の取得（文字色変更などで複数のテキストブロックに分かれている場合を考慮して結合）
+            const titleArr = item.properties?.患者名?.title || [];
+            let name = titleArr.map(t => t.plain_text).join('') || '名前なし';
 
-        const sortedPatients = sortJapanese(patients, 'name');
+            // "患者名" プロパティがない場合のフォールバック
+            if (name === '名前なし') {
+                for (const key in item.properties) {
+                    if (item.properties[key].type === 'title') {
+                        const tArr = item.properties[key].title || [];
+                        if (tArr.length > 0) {
+                            name = tArr.map(t => t.plain_text).join('');
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 2. 読み仮名（フリガナ等）の取得（Notionにフリガナ列があればそちらを優先してソートする）
+            let reading = name; // デフォルトは名前をそのまま使う
+            const readingKeys = ['フリガナ', 'ふりがな', 'カナ', 'かな', '読み', 'よみ', 'furigana', 'kana'];
+
+            for (const key of readingKeys) {
+                if (item.properties?.[key]?.rich_text) {
+                    const rubyArr = item.properties[key].rich_text;
+                    if (rubyArr.length > 0) {
+                        reading = rubyArr.map(t => t.plain_text).join('');
+                        break;
+                    }
+                }
+            }
+
+            return {
+                id: item.id,
+                name: name,
+                reading: reading
+            };
+        });
+
+        // 読み仮名で「あいうえお順」にソート
+        const sortedPatients = sortJapanese(patients, 'reading');
         savePatients(sortedPatients);
         return sortedPatients;
     }

@@ -291,31 +291,44 @@ function proxyNotionPatients(data) {
     
     const url = `https://api.notion.com/v1/databases/${dbId}/query`;
     
-    const options = {
-      method: 'post',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify({
-        page_size: 100
-      }),
-      muteHttpExceptions: true
-    };
+    let allResults = [];
+    let hasMore = true;
+    let nextCursor = undefined;
     
-    const response = UrlFetchApp.fetch(url, options);
-    const statusCode = response.getResponseCode();
-    
-    if (statusCode !== 200) {
-      throw new Error(`Notion API error: ${statusCode} - ${response.getContentText()}`);
+    while (hasMore) {
+      const payload = { page_size: 100 };
+      if (nextCursor) {
+        payload.start_cursor = nextCursor;
+      }
+      
+      const options = {
+        method: 'post',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+      
+      const response = UrlFetchApp.fetch(url, options);
+      const statusCode = response.getResponseCode();
+      
+      if (statusCode !== 200) {
+        throw new Error(`Notion API error: ${statusCode} - ${response.getContentText()}`);
+      }
+      
+      const result = JSON.parse(response.getContentText());
+      allResults = allResults.concat(result.results || []);
+      
+      hasMore = result.has_more;
+      nextCursor = result.next_cursor;
     }
-    
-    const result = JSON.parse(response.getContentText());
     
     return { 
       success: true, 
-      data: result.results || []
+      data: allResults
     };
     
   } catch (error) {
