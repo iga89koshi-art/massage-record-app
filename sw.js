@@ -1,4 +1,4 @@
-const CACHE_NAME = 'massage-record-v1';
+const CACHE_NAME = 'massage-record-v7';
 const ASSETS = [
     './',
     './index.html',

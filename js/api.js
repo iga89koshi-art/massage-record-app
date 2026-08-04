@@ -110,18 +110,19 @@ async function getSalesRecords(filters = {}) {
     );
 }
 
-// === 先週の記録コピー ===
+// === 基本スケジュール ===
 
-async function getLastWeekTreatmentPatients(staff, baseDate) {
-    return await callApiWithRetry(() =>
-        callGasApi('getLastWeekTreatments', { staff, baseDate })
+async function fetchSchedulesFromGas() {
+    const result = await callApiWithRetry(() =>
+        callGasApi('getSchedules')
     );
-}
 
-async function getLastWeekSalesContacts(staff, baseDate) {
-    return await callApiWithRetry(() =>
-        callGasApi('getLastWeekSales', { staff, baseDate })
-    );
+    if (result.success && result.data) {
+        saveSchedules(result.data);
+        return result.data;
+    }
+
+    throw new Error('スケジュールデータの取得に失敗しました');
 }
 
 // === 担当者マスタ ===

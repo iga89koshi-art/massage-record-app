@@ -11,7 +11,8 @@ const STORAGE_KEYS = {
     GAS_API_URL: 'gas_api_url',
     OFFLINE_QUEUE: 'offline_queue',
     TREATMENT_DRAFT: 'treatment_draft',
-    SALES_DRAFT: 'sales_draft'
+    SALES_DRAFT: 'sales_draft',
+    SCHEDULES: 'basic_schedules'
 };
 
 /**
@@ -94,6 +95,16 @@ function getTreatmentStaff() {
 function getSalesStaff() {
     const staff = getStaff();
     return staff.filter(s => s.type && s.type.includes('営業'));
+}
+
+// === 基本スケジュールデータ ===
+
+function saveSchedules(schedules) {
+    return saveToStorage(STORAGE_KEYS.SCHEDULES, schedules);
+}
+
+function getSchedules() {
+    return getFromStorage(STORAGE_KEYS.SCHEDULES, []);
 }
 
 // === パスワード ===
@@ -215,5 +226,6 @@ function clearSalesDraft() {
 function clearCache() {
     removeFromStorage(STORAGE_KEYS.PATIENTS);
     removeFromStorage(STORAGE_KEYS.STAFF);
+    removeFromStorage(STORAGE_KEYS.SCHEDULES);
     showToast('キャッシュをクリアしました');
 }

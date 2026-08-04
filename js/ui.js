@@ -139,17 +139,20 @@ function createPatientSelectHtml(selectedValue) {
 /**
  * 施術記録エントリーを追加
  */
-function addTreatmentEntry(patient, memo) {
+function addTreatmentEntry(patient, memo, time) {
     treatmentEntryCounter++;
     const list = document.getElementById('treatment-batch-list');
     const entryId = `treatment-entry-${treatmentEntryCounter}`;
+
+    const numLabel = list.children.length + 1;
+    const headerText = time ? `${numLabel} (${time}〜)` : `${numLabel}`;
 
     const entry = document.createElement('div');
     entry.className = 'batch-entry';
     entry.id = entryId;
     entry.innerHTML = `
         <div class="batch-entry-header">
-            <span class="batch-entry-number">${list.children.length + 1}</span>
+            <span class="batch-entry-number">${headerText}</span>
             <button type="button" class="btn-remove-entry" onclick="removeTreatmentEntry('${entryId}')">✕</button>
         </div>
         <div class="form-group">
@@ -296,31 +299,53 @@ function autoSaveTreatmentDraft() {
 }
 
 /**
- * 先週の施術記録をコピー
+ * 曜日を取得するヘルパー関数
  */
-async function copyLastWeekTreatment() {
+function getDayOfWeek(dateString) {
+    const d = new Date(dateString);
+    const dayIndex = d.getDay(); // 0: 日, 1: 月...
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+    return days[dayIndex];
+}
+
+/**
+ * 基本スケジュール（施術記録）を読み込む
+ */
+async function loadScheduleTreatment() {
     const staff = document.getElementById('treatment-staff').value;
     const baseDate = document.getElementById('treatment-date').value;
 
-    if (!staff) {
-        showError('担当者を選択してください');
+    if (!staff || !baseDate) {
+        showError('日付と担当者を選択してください');
         return;
     }
 
     try {
-        showLoading('先週の記録を取得中...');
-        const result = await getLastWeekTreatmentPatients(staff, baseDate);
-        hideLoading();
+        let schedules = getSchedules();
 
-        if (!result.success) {
-            showError('取得に失敗しました');
+        // ローカルキャッシュに無い、または更新したての場合は念のため取得（通常は設定画面でキャッシュ済み）
+        if (!schedules || schedules.length === 0) {
+            showLoading('スケジュールを取得中...');
+            schedules = await fetchSchedulesFromGas();
+            hideLoading();
+        }
+
+        const dayName = getDayOfWeek(baseDate);
+
+        // 該当のスケジュールを抽出（施術、担当者、曜日一致）
+        const targetSchedules = schedules.filter(s =>
+            s.type === 'treatment' &&
+            s.staff === staff &&
+            s.day === dayName
+        );
+
+        if (targetSchedules.length === 0) {
+            showToast('この日のスケジュールはありません', 3000);
             return;
         }
 
-        if (!result.data || result.data.length === 0) {
-            showToast('該当する記録がありません', 3000);
-            return;
-        }
+        // 時間順（昇順）にソート
+        targetSchedules.sort((a, b) => a.time.localeCompare(b.time));
 
         // 既存エントリーが空の1件だけなら削除
         const existingEntries = document.querySelectorAll('#treatment-batch-list .batch-entry');
@@ -331,15 +356,15 @@ async function copyLastWeekTreatment() {
             }
         }
 
-        result.data.forEach(item => {
-            addTreatmentEntry(item.name, item.memo);
+        targetSchedules.forEach(item => {
+            addTreatmentEntry(item.name, '', item.time); // メモは空
         });
 
-        showToast(`${result.data.length}件の記録を追加しました`, 2000);
+        showToast(`${targetSchedules.length}件のスケジュールを追加しました`, 2000);
     } catch (error) {
         hideLoading();
-        console.error('Copy last week failed:', error);
-        showError('取得に失敗しました');
+        console.error('Load schedule failed:', error);
+        showError('スケジュールの取得に失敗しました');
     }
 }
 
@@ -347,7 +372,7 @@ function setupTreatmentScreen() {
     document.getElementById('btn-add-treatment-entry').addEventListener('click', () => addTreatmentEntry());
     document.getElementById('btn-save-batch-treatment').addEventListener('click', saveBatchTreatment);
     document.getElementById('btn-clear-treatment').addEventListener('click', clearTreatmentBatch);
-    document.getElementById('btn-copy-last-week-treatment').addEventListener('click', copyLastWeekTreatment);
+    document.getElementById('btn-load-schedule-treatment').addEventListener('click', loadScheduleTreatment);
     document.getElementById('btn-back-treatment').addEventListener('click', () => {
         showScreen('home');
     });
@@ -443,17 +468,20 @@ function populateSalesStaffSelect() {
 /**
  * 営業記録エントリーを追加
  */
-function addSalesEntry(careManager, content) {
+function addSalesEntry(careManager, content, time) {
     salesEntryCounter++;
     const list = document.getElementById('sales-batch-list');
     const entryId = `sales-entry-${salesEntryCounter}`;
+
+    const numLabel = list.children.length + 1;
+    const headerText = time ? `${numLabel} (${time}〜)` : `${numLabel}`;
 
     const entry = document.createElement('div');
     entry.className = 'batch-entry';
     entry.id = entryId;
     entry.innerHTML = `
         <div class="batch-entry-header">
-            <span class="batch-entry-number">${list.children.length + 1}</span>
+            <span class="batch-entry-number">${headerText}</span>
             <button type="button" class="btn-remove-entry" onclick="removeSalesEntry('${entryId}')">✕</button>
         </div>
         <div class="form-group">
@@ -597,31 +625,40 @@ function autoSaveSalesDraft() {
 }
 
 /**
- * 先週の営業記録をコピー
+ * 基本スケジュール（営業記録）を読み込む
  */
-async function copyLastWeekSales() {
+async function loadScheduleSales() {
     const staff = document.getElementById('sales-staff').value;
     const baseDate = document.getElementById('sales-date').value;
 
-    if (!staff) {
-        showError('営業担当を選択してください');
+    if (!staff || !baseDate) {
+        showError('日付と営業担当を選択してください');
         return;
     }
 
     try {
-        showLoading('先週の記録を取得中...');
-        const result = await getLastWeekSalesContacts(staff, baseDate);
-        hideLoading();
+        let schedules = getSchedules();
 
-        if (!result.success) {
-            showError('取得に失敗しました');
+        if (!schedules || schedules.length === 0) {
+            showLoading('スケジュールを取得中...');
+            schedules = await fetchSchedulesFromGas();
+            hideLoading();
+        }
+
+        const dayName = getDayOfWeek(baseDate);
+
+        const targetSchedules = schedules.filter(s =>
+            s.type === 'sales' &&
+            s.staff === staff &&
+            s.day === dayName
+        );
+
+        if (targetSchedules.length === 0) {
+            showToast('この日のスケジュールはありません', 3000);
             return;
         }
 
-        if (!result.data || result.data.length === 0) {
-            showToast('該当する記録がありません', 3000);
-            return;
-        }
+        targetSchedules.sort((a, b) => a.time.localeCompare(b.time));
 
         const existingEntries = document.querySelectorAll('#sales-batch-list .batch-entry');
         if (existingEntries.length === 1) {
@@ -631,15 +668,15 @@ async function copyLastWeekSales() {
             }
         }
 
-        result.data.forEach(item => {
-            addSalesEntry(item.name, item.memo);
+        targetSchedules.forEach(item => {
+            addSalesEntry(item.name, '', item.time);
         });
 
-        showToast(`${result.data.length}件の記録を追加しました`, 2000);
+        showToast(`${targetSchedules.length}件のスケジュールを追加しました`, 2000);
     } catch (error) {
         hideLoading();
-        console.error('Copy last week failed:', error);
-        showError('取得に失敗しました');
+        console.error('Load schedule failed:', error);
+        showError('スケジュールの取得に失敗しました');
     }
 }
 
@@ -647,7 +684,7 @@ function setupSalesScreen() {
     document.getElementById('btn-add-sales-entry').addEventListener('click', () => addSalesEntry());
     document.getElementById('btn-save-batch-sales').addEventListener('click', saveBatchSales);
     document.getElementById('btn-clear-sales').addEventListener('click', clearSalesBatch);
-    document.getElementById('btn-copy-last-week-sales').addEventListener('click', copyLastWeekSales);
+    document.getElementById('btn-load-schedule-sales').addEventListener('click', loadScheduleSales);
     document.getElementById('btn-back-sales').addEventListener('click', () => {
         showScreen('home');
     });
@@ -902,13 +939,18 @@ async function testNotion() {
 
 async function reloadPatients() {
     try {
-        showLoading('患者リスト取得中...');
+        showLoading('データ再取得中...');
         await fetchPatientsFromNotion();
+        // スケジュールも再取得
+        try {
+            await fetchSchedulesFromGas();
+        } catch (e) { console.warn(e); }
+
         hideLoading();
-        showToast('患者リストを更新しました');
+        showToast('各種データを更新しました');
     } catch (error) {
         hideLoading();
-        showError('患者リストの取得に失敗しました');
+        showError('データの取得に失敗しました');
     }
 }
 

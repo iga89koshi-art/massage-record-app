@@ -20,7 +20,8 @@ function getSpreadsheet() {
 const SHEET_NAMES = {
   TREATMENT: '施術記録',
   SALES: '営業記録',
-  STAFF: '担当者マスタ'
+  STAFF: '担当者マスタ',
+  SCHEDULE: '基本スケジュール'
 };
 
 /**
@@ -52,6 +53,9 @@ function doPost(e) {
         break;
       case 'proxyNotionPatients':
         result = proxyNotionPatients(data);
+        break;
+      case 'getSchedules':
+        result = getBasicSchedulesData();
         break;
       case 'ping':
         result = { success: true, message: 'pong' };
@@ -382,4 +386,76 @@ function initializeSpreadsheet() {
   }
   
   Logger.log('スプレッドシートの初期化が完了しました');
+}
+
+/**
+ * 時間割形式（マトリクス型・シート分割方式）の基本スケジュールを取得
+ * シート名のルール： 「名前_種別」 （例：「五十嵐_施術」「五十嵐_営業」）
+ */
+function getBasicSchedulesData() {
+  try {
+    const sheets = getSpreadsheet().getSheets();
+    const schedules = [];
+    
+    for (const sheet of sheets) {
+        const sheetName = sheet.getName();
+        
+        // シート名に "_" が含まれているものだけを対象とする
+        if (!sheetName.includes('_')) continue;
+        
+        const [staff, typeRaw] = sheetName.split('_');
+        if (!staff || !typeRaw) continue;
+        
+        // 種類を判定
+        let type;
+        if (typeRaw.includes('施術')) {
+            type = 'treatment';
+        } else if (typeRaw.includes('営業')) {
+            type = 'sales';
+        } else {
+            continue; // 施術シートでも営業シートでもない場合はスキップ
+        }
+        
+        const data = sheet.getDataRange().getValues();
+        if (data.length <= 1) continue; // データがない場合はスキップ
+        
+        // [時間(0), 月(1), 火(2), 水(3), 木(4), 金(5), 土(6), 日(7)] 
+        for (let i = 1; i < data.length; i++) {
+            const row = data[i];
+            
+            let timeStr = '';
+            if (row[0] instanceof Date) {
+               timeStr = Utilities.formatDate(row[0], 'JST', 'HH:mm');
+            } else {
+               timeStr = (row[0] || '').toString().trim();
+               // '9:00' などの表記を '09:00' に揃える
+               if (timeStr.length === 4 && timeStr.indexOf(':') === 1) {
+                  timeStr = '0' + timeStr;
+               }
+            }
+            
+            if (!timeStr) continue;
+            
+            const days = ['月', '火', '水', '木', '金', '土', '日'];
+            
+            for (let d = 0; d < 7; d++) {
+                const index = 1 + d;
+                const patientName = (row[index] || '').toString().trim();
+                if (patientName) {
+                    schedules.push({
+                       staff: staff,
+                       type: type,
+                       time: timeStr,
+                       day: days[d],
+                       name: patientName
+                    });
+                }
+            }
+        }
+    }
+    
+    return { success: true, data: schedules };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
 }
