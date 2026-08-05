@@ -31,6 +31,10 @@
             <header class="app-header">
                 <h1>📋 訪問マッサージ記録</h1>
             </header>
+            <div id="sync-banner" class="sync-banner hidden">
+                <span>📤 未送信の記録が<strong id="sync-pending-count">0</strong>件あります</span>
+                <button type="button" id="btn-sync-now" class="btn-sync-now">今すぐ送信</button>
+            </div>
             <div class="button-grid">
                 <button id="btn-treatment" class="menu-btn primary">
                     <span class="icon">📝</span>
@@ -267,6 +271,11 @@
                 <button id="btn-change-password" class="btn btn-warning">パスワード変更</button>
             </div>
             <div class="settings-section">
+                <h3>オフライン同期</h3>
+                <p>未送信の記録: <strong id="settings-sync-count">0</strong>件</p>
+                <button id="btn-settings-sync-now" class="btn btn-info">今すぐ同期</button>
+            </div>
+            <div class="settings-section">
                 <h3>データ管理</h3>
                 <div class="button-group-inline">
                     <button id="btn-clear-cache" class="btn btn-warning">キャッシュをクリア</button>
@@ -281,11 +290,11 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=3"></script>
-    <script src="./js/storage.js?v=3"></script>
-    <script src="./js/api.js?v=3"></script>
-    <script src="./js/ui.js?v=3"></script>
-    <script src="./js/app.js?v=3"></script>
+    <script src="./js/utils.js?v=4"></script>
+    <script src="./js/storage.js?v=4"></script>
+    <script src="./js/api.js?v=4"></script>
+    <script src="./js/ui.js?v=4"></script>
+    <script src="./js/app.js?v=4"></script>
 </body>
 
 </html>

@@ -568,6 +568,43 @@ tbody tr:hover {
     }
 }
 
+/* 未送信データ通知バナー */
+.sync-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    background: #FFF3E0;
+    border: 2px solid var(--warning-color);
+    color: #7a4a00;
+    padding: var(--spacing-md);
+    border-radius: var(--radius-lg);
+    margin-top: var(--spacing-md);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.sync-banner.hidden {
+    display: none;
+}
+
+.btn-sync-now {
+    background: var(--warning-color);
+    color: white;
+    padding: 8px 16px;
+    min-width: auto;
+    font-size: 14px;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-sync-now:active {
+    background: #F57C00;
+}
+
 /* --------- 一括入力UI --------- */
 
 /* 共通項目エリア */

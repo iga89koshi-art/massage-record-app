@@ -19,6 +19,12 @@ async function initApp() {
     // UI初期化
     initUI();
 
+    // 未送信データの件数を表示に反映
+    updateSyncBadge();
+
+    // 未送信データの自動同期を開始（起動時・定期・復帰時に再試行）
+    startAutoSync();
+
     // 初回起動時のデータ取得
     await loadInitialData();
 
@@ -66,9 +72,7 @@ async function loadInitialData() {
  */
 function handleServiceWorkerMessage(event) {
     if (event.data && event.data.type === 'SYNC_QUEUE') {
-        syncOfflineQueue().catch(error => {
-            console.error('Sync queue failed:', error);
-        });
+        trySyncIfOnline();
     }
 }
 

@@ -191,6 +191,10 @@ function removeFromOfflineQueue(itemId) {
     return saveToStorage(STORAGE_KEYS.OFFLINE_QUEUE, queue);
 }
 
+function getOfflineQueueCount() {
+    return getOfflineQueue().length;
+}
+
 function clearOfflineQueue() {
     return saveToStorage(STORAGE_KEYS.OFFLINE_QUEUE, []);
 }

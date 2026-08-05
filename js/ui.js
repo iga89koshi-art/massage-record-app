@@ -64,6 +64,66 @@ function setupHomeScreen() {
     document.getElementById('btn-settings').addEventListener('click', () => {
         showScreen('settings');
     });
+
+    const syncBtn = document.getElementById('btn-sync-now');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', manualSyncNow);
+    }
+}
+
+// =============================================
+// 未送信データ（オフラインキュー）の表示・手動同期
+// =============================================
+
+/**
+ * ホーム画面・設定画面の未送信件数表示を更新
+ */
+function updateSyncBadge() {
+    const count = getOfflineQueueCount();
+
+    const banner = document.getElementById('sync-banner');
+    const countEl = document.getElementById('sync-pending-count');
+    if (banner && countEl) {
+        countEl.textContent = count;
+        banner.classList.toggle('hidden', count === 0);
+    }
+
+    const settingsCountEl = document.getElementById('settings-sync-count');
+    if (settingsCountEl) {
+        settingsCountEl.textContent = count;
+    }
+}
+
+/**
+ * 未送信データを今すぐ同期する（手動トリガー）
+ */
+async function manualSyncNow() {
+    if (!navigator.onLine) {
+        showError('オフラインです。電波の良い場所で再度お試しください');
+        return;
+    }
+
+    try {
+        showLoading('未送信データを送信中...');
+        const result = await syncOfflineQueue();
+        hideLoading();
+
+        if (result.synced > 0) {
+            showToast(`${result.synced}件を送信しました`);
+        }
+        if (result.failed > 0) {
+            showError(`${result.failed}件の送信に失敗しました。時間をおいて再度お試しください`);
+        }
+        if (!result.synced && !result.failed) {
+            showToast('未送信のデータはありません');
+        }
+
+        updateSyncBadge();
+    } catch (error) {
+        hideLoading();
+        console.error('Manual sync failed:', error);
+        showError('同期に失敗しました');
+    }
 }
 
 // =============================================
@@ -195,16 +255,16 @@ async function saveBatchTreatment() {
         return;
     }
 
-    const entries = document.querySelectorAll('#treatment-batch-list .batch-entry');
-    if (entries.length === 0) {
+    const entryEls = Array.from(document.querySelectorAll('#treatment-batch-list .batch-entry'));
+    if (entryEls.length === 0) {
         showError('記録を追加してください');
         return;
     }
 
     // バリデーション
-    const records = [];
+    const items = [];
     let hasError = false;
-    entries.forEach((entry, index) => {
+    entryEls.forEach((entry, index) => {
         const patient = entry.querySelector('.entry-patient').value;
         const memo = entry.querySelector('.entry-memo').value;
 
@@ -214,52 +274,74 @@ async function saveBatchTreatment() {
             return;
         }
 
-        records.push({
-            date,
-            patientId: '',
-            patientName: patient,
-            staff,
-            memo,
-            timestamp: getTimestamp(),
-            notionSynced: ''
+        items.push({
+            el: entry,
+            record: {
+                date,
+                patientId: '',
+                patientName: patient,
+                staff,
+                memo,
+                timestamp: getTimestamp(),
+                notionSynced: ''
+            }
         });
     });
 
     if (hasError) return;
 
     try {
-        showLoading(`${records.length}件を保存中...`);
+        showLoading(`${items.length}件を保存中...`);
 
-        // 全件を並列送信（高速化）
-        const results = await Promise.all(
-            records.map(record => saveTreatmentRecord(record))
+        // 個別に送信し、失敗した記録だけを画面に残す
+        // （Promise.allだと1件でも失敗すると全体が失敗扱いになり、
+        //   再送信時に成功済みの記録まで二重送信されてしまうため）
+        const outcomes = await Promise.allSettled(
+            items.map(item => saveTreatmentRecord(item.record))
         );
 
         let offlineCount = 0;
         let successCount = 0;
-        results.forEach(result => {
-            if (result.offline) {
-                offlineCount++;
+        let failCount = 0;
+
+        outcomes.forEach((outcome, i) => {
+            if (outcome.status === 'fulfilled') {
+                if (outcome.value.offline) {
+                    offlineCount++;
+                } else {
+                    successCount++;
+                }
+                items[i].el.remove();
             } else {
-                successCount++;
+                failCount++;
+                console.error('Save failed for entry', items[i].record, outcome.reason);
             }
         });
 
         hideLoading();
 
+        if (failCount > 0) {
+            showError(`${failCount}件の保存に失敗しました。内容を確認して「まとめて保存」を再度押してください`);
+        }
+
         if (offlineCount > 0) {
-            showToast(`${offlineCount}件を一時保存しました（後で自動送信）`, 3000);
-        } else {
+            showToast(`${offlineCount}件を一時保存しました（電波の良い場所で自動送信されます）`, 3500);
+        } else if (successCount > 0 && failCount === 0) {
             showToast(`${successCount}件を保存しました`, 2000);
         }
 
-        // リストをクリア（日付・担当者は維持）
-        document.getElementById('treatment-batch-list').innerHTML = '';
-        treatmentEntryCounter = 0;
-        addTreatmentEntry();
+        renumberEntries('treatment-batch-list');
 
-        // 一時保存をクリア
-        clearTreatmentDraft();
+        // 残っているのは失敗分のみ。空になったら入力枠を1つ用意
+        if (document.querySelectorAll('#treatment-batch-list .batch-entry').length === 0) {
+            addTreatmentEntry();
+        }
+
+        if (failCount === 0) {
+            clearTreatmentDraft();
+        } else {
+            autoSaveTreatmentDraft();
+        }
 
     } catch (error) {
         hideLoading();
@@ -522,15 +604,15 @@ async function saveBatchSales() {
         return;
     }
 
-    const entries = document.querySelectorAll('#sales-batch-list .batch-entry');
-    if (entries.length === 0) {
+    const entryEls = Array.from(document.querySelectorAll('#sales-batch-list .batch-entry'));
+    if (entryEls.length === 0) {
         showError('記録を追加してください');
         return;
     }
 
-    const records = [];
+    const items = [];
     let hasError = false;
-    entries.forEach((entry, index) => {
+    entryEls.forEach((entry, index) => {
         const careManager = entry.querySelector('.entry-care-manager').value.trim();
         const content = entry.querySelector('.entry-content').value;
 
@@ -540,52 +622,73 @@ async function saveBatchSales() {
             return;
         }
 
-        records.push({
-            date,
-            careManagerId: '',
-            officeName: '',
-            careManagerName: careManager,
-            staff,
-            content,
-            timestamp: getTimestamp(),
-            notionSynced: ''
+        items.push({
+            el: entry,
+            record: {
+                date,
+                careManagerId: '',
+                officeName: '',
+                careManagerName: careManager,
+                staff,
+                content,
+                timestamp: getTimestamp(),
+                notionSynced: ''
+            }
         });
     });
 
     if (hasError) return;
 
     try {
-        showLoading(`${records.length}件を保存中...`);
+        showLoading(`${items.length}件を保存中...`);
 
-        // 全件を並列送信（高速化）
-        const results = await Promise.all(
-            records.map(record => saveSalesRecord(record))
+        // 個別に送信し、失敗した記録だけを画面に残す
+        // （成功済みの記録が再送信で二重登録されるのを防ぐため）
+        const outcomes = await Promise.allSettled(
+            items.map(item => saveSalesRecord(item.record))
         );
 
         let offlineCount = 0;
         let successCount = 0;
-        results.forEach(result => {
-            if (result.offline) {
-                offlineCount++;
+        let failCount = 0;
+
+        outcomes.forEach((outcome, i) => {
+            if (outcome.status === 'fulfilled') {
+                if (outcome.value.offline) {
+                    offlineCount++;
+                } else {
+                    successCount++;
+                }
+                items[i].el.remove();
             } else {
-                successCount++;
+                failCount++;
+                console.error('Save failed for entry', items[i].record, outcome.reason);
             }
         });
 
         hideLoading();
 
+        if (failCount > 0) {
+            showError(`${failCount}件の保存に失敗しました。内容を確認して「まとめて保存」を再度押してください`);
+        }
+
         if (offlineCount > 0) {
-            showToast(`${offlineCount}件を一時保存しました（後で自動送信）`, 3000);
-        } else {
+            showToast(`${offlineCount}件を一時保存しました（電波の良い場所で自動送信されます）`, 3500);
+        } else if (successCount > 0 && failCount === 0) {
             showToast(`${successCount}件を保存しました`, 2000);
         }
 
-        // リストをクリア（日付・担当者は維持）
-        document.getElementById('sales-batch-list').innerHTML = '';
-        salesEntryCounter = 0;
-        addSalesEntry();
+        renumberEntries('sales-batch-list');
 
-        clearSalesDraft();
+        if (document.querySelectorAll('#sales-batch-list .batch-entry').length === 0) {
+            addSalesEntry();
+        }
+
+        if (failCount === 0) {
+            clearSalesDraft();
+        } else {
+            autoSaveSalesDraft();
+        }
 
     } catch (error) {
         hideLoading();
@@ -871,6 +974,7 @@ function initSettingsScreen() {
     document.getElementById('setting-notion-care-manager-db').value = getNotionCareManagerDb();
     document.getElementById('setting-gas-spreadsheet-url').value = getGasSpreadsheetUrl();
     document.getElementById('setting-gas-api-url').value = getGasApiUrl();
+    updateSyncBadge();
 }
 
 function saveSettings() {
@@ -961,7 +1065,14 @@ function clearCacheData() {
 }
 
 function resetAllData() {
-    if (window.confirm('全データをリセットしますか?\nこの操作は取り消せません。')) {
+    const pendingCount = getOfflineQueueCount();
+    let message = '全データをリセットしますか?\nこの操作は取り消せません。';
+
+    if (pendingCount > 0) {
+        message = `⚠️ 未送信の記録が${pendingCount}件あります。\n全データをリセットすると、これらの記録は完全に失われます。\n\n本当にリセットしますか?`;
+    }
+
+    if (window.confirm(message)) {
         clearAllStorage();
         showToast('全データをリセットしました');
         setTimeout(() => {
@@ -978,6 +1089,7 @@ function setupSettingsScreen() {
     document.getElementById('btn-reload-patients').addEventListener('click', reloadPatients);
     document.getElementById('btn-clear-cache').addEventListener('click', clearCacheData);
     document.getElementById('btn-reset-all').addEventListener('click', resetAllData);
+    document.getElementById('btn-settings-sync-now').addEventListener('click', manualSyncNow);
     document.getElementById('btn-back-settings').addEventListener('click', () => {
         showScreen('home');
     });

@@ -74,6 +74,8 @@ async function saveTreatmentRecord(record) {
             type: 'treatment',
             data: record
         });
+        refreshSyncBadgeSafe();
+        requestBackgroundSync();
         return { success: true, offline: true };
     }
 
@@ -96,6 +98,8 @@ async function saveSalesRecord(record) {
             type: 'sales',
             data: record
         });
+        refreshSyncBadgeSafe();
+        requestBackgroundSync();
         return { success: true, offline: true };
     }
 
@@ -227,22 +231,57 @@ async function testNotionConnection() {
 
 // === オフライン同期 ===
 
+let isSyncingQueue = false;
+const AUTO_SYNC_INTERVAL_MS = 2 * 60 * 1000; // 2分ごとに未送信データを再試行
+
+/**
+ * UIのバッジ更新（ui.js側にあれば呼ぶ。無くてもエラーにしない）
+ */
+function refreshSyncBadgeSafe() {
+    if (typeof updateSyncBadge === 'function') {
+        updateSyncBadge();
+    }
+}
+
+/**
+ * Background Sync APIへの登録（対応ブラウザのみ。アプリを閉じていても
+ * OSが機会を見て同期してくれる可能性がある保険。iOS Safariは非対応のため
+ * 主な同期経路にはしない）
+ */
+function requestBackgroundSync() {
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        navigator.serviceWorker.ready
+            .then(reg => reg.sync.register('sync-records'))
+            .catch(err => console.warn('Background sync registration failed:', err));
+    }
+}
+
+/**
+ * オフラインキューの同期を実行
+ * 同時実行防止のため、既に実行中なら何もしない
+ */
 async function syncOfflineQueue() {
+    if (isSyncingQueue) {
+        return { success: true, synced: 0, skipped: true };
+    }
+
     const queue = getOfflineQueue();
 
     if (queue.length === 0) {
+        refreshSyncBadgeSafe();
         return { success: true, synced: 0 };
     }
 
+    isSyncingQueue = true;
     let syncedCount = 0;
     const failedItems = [];
 
     for (const item of queue) {
         try {
             if (item.type === 'treatment') {
-                await callGasApi('saveTreatment', item.data);
+                await callApiWithRetry(() => callGasApi('saveTreatment', item.data), 2);
             } else if (item.type === 'sales') {
-                await callGasApi('saveSales', item.data);
+                await callApiWithRetry(() => callGasApi('saveSales', item.data), 2);
             }
 
             removeFromOfflineQueue(item.id);
@@ -253,6 +292,9 @@ async function syncOfflineQueue() {
         }
     }
 
+    isSyncingQueue = false;
+    refreshSyncBadgeSafe();
+
     return {
         success: failedItems.length === 0,
         synced: syncedCount,
@@ -260,15 +302,45 @@ async function syncOfflineQueue() {
     };
 }
 
-// オンライン復帰時の自動同期
-window.addEventListener('online', async () => {
-    console.log('Online - syncing queue...');
+/**
+ * オンラインなら未送信データの再送を試みる。
+ * 以下のタイミングで呼ばれる（どれか1つに依存しないための多重化）:
+ *  - アプリ起動時
+ *  - 定期的（AUTO_SYNC_INTERVAL_MSごと）
+ *  - オフライン→オンライン復帰時
+ *  - アプリがバックグラウンドから復帰した時（visibilitychange）
+ */
+async function trySyncIfOnline() {
+    if (!navigator.onLine) return;
+    if (getOfflineQueueCount() === 0) return;
+
     try {
         const result = await syncOfflineQueue();
         if (result.synced > 0) {
-            showToast(`${result.synced}件のデータを同期しました`);
+            showToast(`${result.synced}件の未送信データを同期しました`);
         }
     } catch (error) {
         console.error('Auto sync failed:', error);
     }
-});
+}
+
+/**
+ * 自動同期の仕組みを起動する（app.js の初期化から1回だけ呼ぶ）
+ */
+function startAutoSync() {
+    trySyncIfOnline();
+
+    setInterval(trySyncIfOnline, AUTO_SYNC_INTERVAL_MS);
+
+    window.addEventListener('online', trySyncIfOnline);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            trySyncIfOnline();
+        }
+    });
+
+    if (getOfflineQueueCount() > 0) {
+        requestBackgroundSync();
+    }
+}
