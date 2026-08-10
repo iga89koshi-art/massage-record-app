@@ -1067,9 +1067,17 @@ function changePassword() {
 }
 
 async function testGas() {
+    // 保存前でも試せるよう、入力欄の値をそのまま使う
+    const url = document.getElementById('setting-gas-api-url').value.trim();
+
+    if (!url) {
+        showError('Apps Script URLを入力してください');
+        return;
+    }
+
     try {
         showLoading('接続テスト中...');
-        const result = await testGasConnection();
+        const result = await testGasConnection(url);
         hideLoading();
 
         if (result && result.success) {

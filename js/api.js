@@ -248,9 +248,9 @@ async function fetchPatientsFromNotion() {
 
 // === 接続テスト ===
 
-async function testGasConnection() {
+async function testGasConnection(apiUrl) {
     try {
-        const result = await callGasApi('ping');
+        const result = await callGasApi('ping', {}, apiUrl);
         return result;
     } catch (error) {
         console.error('GAS connection test failed:', error);
