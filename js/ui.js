@@ -191,21 +191,62 @@ function createPatientSelectHtml(selectedValue) {
     let html = '<option value="">選択してください</option>';
     patients.forEach(patient => {
         const selected = patient.name === selectedValue ? ' selected' : '';
-        html += `<option value="${patient.name}"${selected}>${patient.name}</option>`;
+        const name = escapeHtml(patient.name);
+        html += `<option value="${name}"${selected}>${name}</option>`;
     });
     return html;
 }
 
 /**
+ * 患者名の表記ゆれを吸収するための正規化。
+ * スケジュール表には「河野 淑子(9:40)」のように時刻メモが付いていたり、
+ * 「中村知平」のようにスペースが省かれていることがあるため、
+ * 括弧書きとスペースを落としてから突き合わせる。
+ */
+function normalizePatientName(name) {
+    return String(name || '')
+        .replace(/[（(][^）)]*[）)]/g, '')
+        .replace(/[\s　]/g, '')
+        .trim();
+}
+
+/**
+ * スケジュール表の1マスを患者名の配列に分解する。
+ * 「佐藤精次 / 髙橋 伊三郎(8:30)」のように複数人が入っている場合に対応。
+ */
+function splitScheduleNames(cell) {
+    return String(cell || '')
+        .split(/[\/／、,]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+/**
+ * 患者リストから該当者を探す。見つからなければ空文字を返す。
+ */
+function findPatientByName(name) {
+    const target = normalizePatientName(name);
+    if (!target) return '';
+
+    const hit = getPatients().find(p => normalizePatientName(p.name) === target);
+    return hit ? hit.name : '';
+}
+
+/**
  * 施術記録エントリーを追加
  */
-function addTreatmentEntry(patient, memo, time) {
+function addTreatmentEntry(patient, memo, time, unmatchedName) {
     treatmentEntryCounter++;
     const list = document.getElementById('treatment-batch-list');
     const entryId = `treatment-entry-${treatmentEntryCounter}`;
 
     const numLabel = list.children.length + 1;
     const headerText = time ? `${numLabel} (${time}〜)` : `${numLabel}`;
+
+    // 患者リストと一致しなかった場合、元の表記を出して手動で選べるようにする
+    const hintHtml = unmatchedName
+        ? `<div class="entry-hint">表の記載：${escapeHtml(unmatchedName)}<br>患者リストに一致する名前がありません。選び直してください</div>`
+        : '';
 
     const entry = document.createElement('div');
     entry.className = 'batch-entry';
@@ -217,6 +258,7 @@ function addTreatmentEntry(patient, memo, time) {
         </div>
         <div class="form-group">
             <label>患者 <span class="required">*</span></label>
+            ${hintHtml}
             <select class="form-control entry-patient" onchange="autoSaveTreatmentDraft()">
                 ${createPatientSelectHtml(patient || '')}
             </select>
@@ -438,11 +480,24 @@ async function loadScheduleTreatment() {
             }
         }
 
+        // 1マスに複数人が入っている場合は分けて追加する
+        let addedCount = 0;
+        let unmatchedCount = 0;
+
         targetSchedules.forEach(item => {
-            addTreatmentEntry(item.name, '', item.time); // メモは空
+            splitScheduleNames(item.name).forEach(rawName => {
+                const matched = findPatientByName(rawName);
+                if (!matched) unmatchedCount++;
+                addTreatmentEntry(matched, '', item.time, matched ? '' : rawName);
+                addedCount++;
+            });
         });
 
-        showToast(`${targetSchedules.length}件のスケジュールを追加しました`, 2000);
+        if (unmatchedCount > 0) {
+            showToast(`${addedCount}件追加（うち${unmatchedCount}件は患者を選び直してください）`, 4000);
+        } else {
+            showToast(`${addedCount}件のスケジュールを追加しました`, 2000);
+        }
     } catch (error) {
         hideLoading();
         console.error('Load schedule failed:', error);
@@ -771,11 +826,15 @@ async function loadScheduleSales() {
             }
         }
 
+        let addedCount = 0;
         targetSchedules.forEach(item => {
-            addSalesEntry(item.name, '', item.time);
+            splitScheduleNames(item.name).forEach(rawName => {
+                addSalesEntry(rawName, '', item.time);
+                addedCount++;
+            });
         });
 
-        showToast(`${targetSchedules.length}件のスケジュールを追加しました`, 2000);
+        showToast(`${addedCount}件のスケジュールを追加しました`, 2000);
     } catch (error) {
         hideLoading();
         console.error('Load schedule failed:', error);
@@ -974,6 +1033,7 @@ function initSettingsScreen() {
     document.getElementById('setting-notion-care-manager-db').value = getNotionCareManagerDb();
     document.getElementById('setting-gas-spreadsheet-url').value = getGasSpreadsheetUrl();
     document.getElementById('setting-gas-api-url').value = getGasApiUrl();
+    document.getElementById('setting-gas-schedule-url').value = getGasScheduleUrl();
     updateSyncBadge();
 }
 
@@ -983,12 +1043,14 @@ function saveSettings() {
     const notionCareManagerDb = document.getElementById('setting-notion-care-manager-db').value;
     const gasSpreadsheetUrl = document.getElementById('setting-gas-spreadsheet-url').value;
     const gasApiUrl = document.getElementById('setting-gas-api-url').value;
+    const gasScheduleUrl = document.getElementById('setting-gas-schedule-url').value;
 
     saveNotionApiKey(notionApiKey);
     saveNotionPatientDb(notionPatientDb);
     saveNotionCareManagerDb(notionCareManagerDb);
     saveGasSpreadsheetUrl(gasSpreadsheetUrl);
     saveGasApiUrl(gasApiUrl);
+    saveGasScheduleUrl(gasScheduleUrl);
 
     showToast('設定を保存しました');
 }
@@ -1042,19 +1104,40 @@ async function testNotion() {
 }
 
 async function reloadPatients() {
-    try {
-        showLoading('データ再取得中...');
-        await fetchPatientsFromNotion();
-        // スケジュールも再取得
-        try {
-            await fetchSchedulesFromGas();
-        } catch (e) { console.warn(e); }
+    const failed = [];
 
-        hideLoading();
+    showLoading('データ再取得中...');
+
+    // 担当者マスタ（スタッフを追加してもここで取り直さないと反映されない）
+    try {
+        await fetchStaffFromGas();
+    } catch (e) {
+        console.warn('Staff reload failed:', e);
+        failed.push('担当者');
+    }
+
+    // 患者リスト（Notion）
+    try {
+        await fetchPatientsFromNotion();
+    } catch (e) {
+        console.warn('Patient reload failed:', e);
+        failed.push('患者リスト');
+    }
+
+    // 基本スケジュール
+    try {
+        await fetchSchedulesFromGas();
+    } catch (e) {
+        console.warn('Schedule reload failed:', e);
+        failed.push('スケジュール');
+    }
+
+    hideLoading();
+
+    if (failed.length === 0) {
         showToast('各種データを更新しました');
-    } catch (error) {
-        hideLoading();
-        showError('データの取得に失敗しました');
+    } else {
+        showError(`${failed.join('・')}の取得に失敗しました`);
     }
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'massage-record-v8';
+const CACHE_NAME = 'massage-record-v9';
 const urlsToCache = [
     './',
     './index.html',

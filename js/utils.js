@@ -19,6 +19,18 @@ function getToday() {
 }
 
 /**
+ * HTMLエスケープ（スプレッドシート等から来た文字列を画面に出す前に通す）
+ */
+function escapeHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
  * 日本語ソート（あいうえお順）
  */
 function sortJapanese(array, key) {

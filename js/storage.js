@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
     NOTION_CARE_MANAGER_DB: 'notion_care_manager_db',
     GAS_SPREADSHEET_URL: 'gas_spreadsheet_url',
     GAS_API_URL: 'gas_api_url',
+    GAS_SCHEDULE_URL: 'gas_schedule_url',
     OFFLINE_QUEUE: 'offline_queue',
     TREATMENT_DRAFT: 'treatment_draft',
     SALES_DRAFT: 'sales_draft',
@@ -169,6 +170,19 @@ function saveGasApiUrl(url) {
 
 function getGasApiUrl() {
     return getFromStorage(STORAGE_KEYS.GAS_API_URL, '');
+}
+
+/**
+ * 基本スケジュール専用のGAS URL。
+ * スケジュール表が記録用とは別のスプレッドシートにある場合に設定する。
+ * 空の場合は記録用と同じURLを使う。
+ */
+function saveGasScheduleUrl(url) {
+    return saveToStorage(STORAGE_KEYS.GAS_SCHEDULE_URL, url);
+}
+
+function getGasScheduleUrl() {
+    return getFromStorage(STORAGE_KEYS.GAS_SCHEDULE_URL, '');
 }
 
 // === オフラインキュー ===

@@ -3,8 +3,8 @@
 /**
  * GAS APIにリクエスト送信
  */
-async function callGasApi(action, data = {}) {
-    const gasUrl = getGasApiUrl();
+async function callGasApi(action, data = {}, apiUrl) {
+    const gasUrl = apiUrl || getGasApiUrl();
 
     if (!gasUrl) {
         throw new Error('GAS APIのURLが設定されていません');
@@ -116,14 +116,53 @@ async function getSalesRecords(filters = {}) {
 
 // === 基本スケジュール ===
 
+const WEEKDAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'];
+const TIME_PATTERN = /^(\d{1,2}):(\d{2})$/;
+
+/**
+ * スケジュール表から読み取った行を整える。
+ * シート先頭に表題行などがあると見出し行（時間・月・火…）が
+ * そのまま患者として混ざってくるため、時刻の形をしていない行は捨てる。
+ */
+function sanitizeSchedules(rows) {
+    if (!Array.isArray(rows)) return [];
+
+    return rows.reduce((acc, row) => {
+        if (!row) return acc;
+
+        const time = String(row.time || '').trim();
+        const name = String(row.name || '').trim();
+        const match = time.match(TIME_PATTERN);
+
+        // 時刻列が「時間」などの見出しになっている行は除外
+        if (!match) return acc;
+        // 患者名が曜日名になっている行（見出しの取り込み）は除外
+        if (!name || WEEKDAY_LABELS.includes(name)) return acc;
+
+        acc.push({
+            staff: String(row.staff || '').trim(),
+            type: row.type,
+            day: String(row.day || '').trim(),
+            // 並べ替えのため 9:00 → 09:00 に揃える
+            time: `${match[1].padStart(2, '0')}:${match[2]}`,
+            name: name
+        });
+        return acc;
+    }, []);
+}
+
 async function fetchSchedulesFromGas() {
+    // スケジュール表が別スプレッドシートにある場合は専用URLを使う
+    const scheduleUrl = getGasScheduleUrl();
+
     const result = await callApiWithRetry(() =>
-        callGasApi('getSchedules')
+        callGasApi('getSchedules', {}, scheduleUrl)
     );
 
     if (result.success && result.data) {
-        saveSchedules(result.data);
-        return result.data;
+        const schedules = sanitizeSchedules(result.data);
+        saveSchedules(schedules);
+        return schedules;
     }
 
     throw new Error('スケジュールデータの取得に失敗しました');
