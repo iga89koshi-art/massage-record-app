@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=2">
+    <link rel="stylesheet" href="./styles/main.css?v=3">
 </head>
 
 <body>
@@ -280,6 +280,41 @@
                 <button id="btn-change-password" class="btn btn-warning">パスワード変更</button>
             </div>
             <div class="settings-section">
+                <h3>設定の共有</h3>
+                <p class="section-note">院の設定をまとめて他の端末に渡せます。コードにはパスワードがかかります。</p>
+                <div class="button-group-inline">
+                    <button id="btn-export-config" class="btn btn-info">設定コードを作る</button>
+                    <button id="btn-show-import-config" class="btn btn-info">設定コードを読み込む</button>
+                </div>
+
+                <!-- 書き出し結果 -->
+                <div id="config-export-panel" class="config-panel hidden">
+                    <div class="form-group">
+                        <label for="config-export-code">設定コード</label>
+                        <textarea id="config-export-code" class="form-control" rows="4" readonly></textarea>
+                    </div>
+                    <div class="button-group-inline">
+                        <button id="btn-copy-config-code" class="btn btn-info">コードをコピー</button>
+                        <button id="btn-copy-config-link" class="btn btn-info">リンクをコピー</button>
+                    </div>
+                </div>
+
+                <!-- 読み込み -->
+                <div id="config-import-panel" class="config-panel hidden">
+                    <div class="form-group">
+                        <label for="config-import-code">設定コードを貼り付け</label>
+                        <textarea id="config-import-code" class="form-control" rows="4"
+                            placeholder="受け取ったコードを貼り付け"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="config-import-password">パスワード</label>
+                        <input type="password" id="config-import-password" class="form-control"
+                            placeholder="院のパスワード">
+                    </div>
+                    <button id="btn-apply-config" class="btn btn-primary">この設定を読み込む</button>
+                </div>
+            </div>
+            <div class="settings-section">
                 <h3>オフライン同期</h3>
                 <p>未送信の記録: <strong id="settings-sync-count">0</strong>件</p>
                 <button id="btn-settings-sync-now" class="btn btn-info">今すぐ同期</button>
@@ -299,11 +334,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=8"></script>
-    <script src="./js/storage.js?v=8"></script>
-    <script src="./js/api.js?v=8"></script>
-    <script src="./js/ui.js?v=8"></script>
-    <script src="./js/app.js?v=8"></script>
+    <script src="./js/utils.js?v=9"></script>
+    <script src="./js/storage.js?v=9"></script>
+    <script src="./js/config-share.js?v=9"></script>
+    <script src="./js/api.js?v=9"></script>
+    <script src="./js/ui.js?v=9"></script>
+    <script src="./js/app.js?v=9"></script>
 </body>
 
 </html>

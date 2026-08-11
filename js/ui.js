@@ -1185,6 +1185,122 @@ async function reloadPatients() {
     }
 }
 
+// === 設定の共有 ===
+
+function togglePanel(id, show) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !show);
+}
+
+/**
+ * 今の設定をパスワード付きのコードにする
+ */
+async function exportConfig() {
+    if (!getGasApiUrl()) {
+        showError('先に設定を保存してください');
+        return;
+    }
+
+    const password = prompt('設定コードを開くためのパスワードを決めてください:');
+    if (password === null || password === '') return;
+
+    const confirmation = prompt('確認のため、もう一度同じパスワードを入力してください:');
+    if (confirmation !== password) {
+        showError('パスワードが一致しません');
+        return;
+    }
+
+    try {
+        showLoading('設定コードを作成中...');
+        const code = await encodeConfigBundle(collectShareableSettings(), password);
+        hideLoading();
+
+        document.getElementById('config-export-code').value = code;
+        togglePanel('config-export-panel', true);
+        togglePanel('config-import-panel', false);
+        showToast('設定コードを作成しました', 3000);
+    } catch (error) {
+        hideLoading();
+        console.error('Export config failed:', error);
+        showError(error.message || '設定コードの作成に失敗しました');
+    }
+}
+
+async function copyToClipboard(text, message) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast(message);
+    } catch (e) {
+        // クリップボードが使えない場合は選択状態にして手動コピーしてもらう
+        const area = document.getElementById('config-export-code');
+        area.focus();
+        area.select();
+        showToast('コピーできませんでした。長押しでコピーしてください', 4000);
+    }
+}
+
+function copyConfigCode() {
+    const code = document.getElementById('config-export-code').value;
+    if (code) copyToClipboard(code, 'コードをコピーしました');
+}
+
+function copyConfigLink() {
+    const code = document.getElementById('config-export-code').value;
+    if (code) copyToClipboard(buildConfigShareLink(code), 'リンクをコピーしました');
+}
+
+/**
+ * 受け取ったコードから設定を反映する
+ */
+async function applyConfigCode() {
+    const code = document.getElementById('config-import-code').value.trim();
+    const password = document.getElementById('config-import-password').value;
+
+    if (!code) {
+        showError('設定コードを貼り付けてください');
+        return;
+    }
+    if (!password) {
+        showError('パスワードを入力してください');
+        return;
+    }
+
+    try {
+        showLoading('設定を読み込み中...');
+        const settings = await decodeConfigBundle(code, password);
+        applyShareableSettings(settings);
+        hideLoading();
+
+        document.getElementById('config-import-code').value = '';
+        document.getElementById('config-import-password').value = '';
+        togglePanel('config-import-panel', false);
+
+        initSettingsScreen();
+        showToast('設定を読み込みました', 3000);
+
+        // 反映した設定で各種データを取り直す
+        await reloadPatients();
+    } catch (error) {
+        hideLoading();
+        console.error('Apply config failed:', error);
+        showError(error.message || '設定の読み込みに失敗しました');
+    }
+}
+
+/**
+ * リンク経由で開かれた場合、読み込み欄にコードを入れて設定画面を出す
+ */
+function handleSharedConfigLink() {
+    const code = takeConfigCodeFromUrl();
+    if (!code) return;
+
+    showScreen('settings');
+    document.getElementById('config-import-code').value = code;
+    togglePanel('config-import-panel', true);
+    document.getElementById('config-import-panel').scrollIntoView({ behavior: 'smooth' });
+    showToast('パスワードを入力して設定を読み込んでください', 5000);
+}
+
 function clearCacheData() {
     if (window.confirm('キャッシュをクリアしますか?')) {
         clearCache();
@@ -1217,6 +1333,16 @@ function setupSettingsScreen() {
     document.getElementById('btn-clear-cache').addEventListener('click', clearCacheData);
     document.getElementById('btn-reset-all').addEventListener('click', resetAllData);
     document.getElementById('btn-settings-sync-now').addEventListener('click', manualSyncNow);
+    document.getElementById('btn-export-config').addEventListener('click', exportConfig);
+    document.getElementById('btn-copy-config-code').addEventListener('click', copyConfigCode);
+    document.getElementById('btn-copy-config-link').addEventListener('click', copyConfigLink);
+    document.getElementById('btn-apply-config').addEventListener('click', applyConfigCode);
+    document.getElementById('btn-show-import-config').addEventListener('click', () => {
+        const panel = document.getElementById('config-import-panel');
+        const willShow = panel.classList.contains('hidden');
+        togglePanel('config-import-panel', willShow);
+        togglePanel('config-export-panel', false);
+    });
     document.getElementById('btn-back-settings').addEventListener('click', () => {
         showScreen('home');
     });

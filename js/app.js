@@ -31,6 +31,12 @@ async function initApp() {
     // ホーム画面を表示
     showScreen('home');
 
+    // 共有リンクから開かれた場合は設定の読み込み画面へ
+    handleSharedConfigLink();
+
+    // アプリを開いたまま共有リンクを踏んだ場合は再読み込みが起きないので拾う
+    window.addEventListener('hashchange', handleSharedConfigLink);
+
     // Service Workerからのメッセージを受信
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);

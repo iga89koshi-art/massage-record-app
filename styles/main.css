@@ -474,6 +474,26 @@ tbody tr:hover {
     border-bottom: 2px solid var(--primary-light);
 }
 
+/* 設定の共有パネル */
+.section-note {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+    line-height: 1.5;
+}
+
+.config-panel {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+}
+
+.config-panel textarea.form-control {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    word-break: break-all;
+}
+
 /* ローディング */
 .loader {
     position: fixed;
