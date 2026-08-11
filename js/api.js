@@ -168,6 +168,94 @@ async function fetchSchedulesFromGas() {
     throw new Error('スケジュールデータの取得に失敗しました');
 }
 
+// === 訪問予定（Notion 訪問予定データベース） ===
+
+function plainText(richText) {
+    return (richText || []).map(t => t.plain_text).join('').trim();
+}
+
+/**
+ * NotionのページIDはハイフン有無が混在しうるので揃える
+ */
+function normalizeNotionId(id) {
+    return String(id || '').replace(/-/g, '').toLowerCase();
+}
+
+/**
+ * 訪問予定データベースの1件を、スケジュール1件に変換する。
+ * 患者はリレーションなので、取得済みの患者リストからIDで名前を引く。
+ */
+function toVisitPlan(item, patientNameById) {
+    const props = item.properties || {};
+
+    // 「非継続」にチェックが付いた予定は表示しない
+    if (props['非継続'] && props['非継続'].checkbox) return null;
+
+    const staff = props['施術担当者'] && props['施術担当者'].select
+        ? props['施術担当者'].select.name : '';
+    const day = props['曜日'] && props['曜日'].select
+        ? props['曜日'].select.name : '';
+    const time = plainText(props['開始時刻'] && props['開始時刻'].rich_text);
+
+    const relations = (props['患者'] && props['患者'].relation) || [];
+    let name = relations
+        .map(r => patientNameById[normalizeNotionId(r.id)])
+        .filter(Boolean)
+        .join(' / ');
+
+    // リレーションが解決できない場合はタイトル「火 08:30 髙橋 伊三郎」から拾う
+    if (!name) {
+        const title = plainText(props['訪問'] && props['訪問'].title);
+        name = title.replace(/^\S+\s*\d{1,2}:\d{2}\s*/, '').trim();
+    }
+
+    if (!staff || !day || !name) return null;
+
+    const match = time.match(TIME_PATTERN);
+    const duration = props['所要時間(分)'] ? props['所要時間(分)'].number : null;
+
+    return {
+        staff: staff,
+        type: 'treatment',
+        day: day,
+        time: match ? `${match[1].padStart(2, '0')}:${match[2]}` : '',
+        name: name,
+        duration: duration || null,
+        note: plainText(props['備考'] && props['備考'].rich_text)
+    };
+}
+
+async function fetchVisitPlansFromNotion() {
+    const apiKey = getNotionApiKey();
+    const dbId = getNotionVisitPlanDb();
+
+    if (!apiKey || !dbId) {
+        throw new Error('訪問予定データベースの設定が不完全です');
+    }
+
+    const result = await callApiWithRetry(() =>
+        callGasApi('proxyNotionPatients', { apiKey, dbId })
+    );
+
+    if (!result.success || !result.data) {
+        throw new Error('訪問予定の取得に失敗しました');
+    }
+
+    // 患者リレーションを名前に置き換えるための対応表
+    const patientNameById = {};
+    getPatients().forEach(p => {
+        if (p.id) patientNameById[normalizeNotionId(p.id)] = p.name;
+    });
+
+    const plans = result.data
+        .map(item => toVisitPlan(item, patientNameById))
+        .filter(Boolean)
+        .sort((a, b) => a.time.localeCompare(b.time));
+
+    saveVisitPlans(plans);
+    return plans;
+}
+
 // === 担当者マスタ ===
 
 async function fetchStaffFromGas() {

@@ -7,13 +7,15 @@ const STORAGE_KEYS = {
     NOTION_API_KEY: 'notion_api_key',
     NOTION_PATIENT_DB: 'notion_patient_db',
     NOTION_CARE_MANAGER_DB: 'notion_care_manager_db',
+    NOTION_VISIT_PLAN_DB: 'notion_visit_plan_db',
     GAS_SPREADSHEET_URL: 'gas_spreadsheet_url',
     GAS_API_URL: 'gas_api_url',
     GAS_SCHEDULE_URL: 'gas_schedule_url',
     OFFLINE_QUEUE: 'offline_queue',
     TREATMENT_DRAFT: 'treatment_draft',
     SALES_DRAFT: 'sales_draft',
-    SCHEDULES: 'basic_schedules'
+    SCHEDULES: 'basic_schedules',
+    VISIT_PLANS: 'visit_plans'
 };
 
 /**
@@ -108,6 +110,16 @@ function getSchedules() {
     return getFromStorage(STORAGE_KEYS.SCHEDULES, []);
 }
 
+// === 訪問予定（Notion 訪問予定データベース） ===
+
+function saveVisitPlans(plans) {
+    return saveToStorage(STORAGE_KEYS.VISIT_PLANS, plans);
+}
+
+function getVisitPlans() {
+    return getFromStorage(STORAGE_KEYS.VISIT_PLANS, []);
+}
+
 // === パスワード ===
 
 function savePassword(password) {
@@ -154,6 +166,14 @@ function saveNotionCareManagerDb(dbId) {
 
 function getNotionCareManagerDb() {
     return getFromStorage(STORAGE_KEYS.NOTION_CARE_MANAGER_DB, '');
+}
+
+function saveNotionVisitPlanDb(dbId) {
+    return saveToStorage(STORAGE_KEYS.NOTION_VISIT_PLAN_DB, dbId);
+}
+
+function getNotionVisitPlanDb() {
+    return getFromStorage(STORAGE_KEYS.NOTION_VISIT_PLAN_DB, '');
 }
 
 function saveGasSpreadsheetUrl(url) {
@@ -245,5 +265,6 @@ function clearCache() {
     removeFromStorage(STORAGE_KEYS.PATIENTS);
     removeFromStorage(STORAGE_KEYS.STAFF);
     removeFromStorage(STORAGE_KEYS.SCHEDULES);
+    removeFromStorage(STORAGE_KEYS.VISIT_PLANS);
     showToast('キャッシュをクリアしました');
 }

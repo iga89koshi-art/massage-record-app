@@ -235,17 +235,28 @@ function findPatientByName(name) {
 /**
  * 施術記録エントリーを追加
  */
-function addTreatmentEntry(patient, memo, time, unmatchedName) {
+function addTreatmentEntry(patient, memo, time, options) {
+    const opts = options || {};
     treatmentEntryCounter++;
     const list = document.getElementById('treatment-batch-list');
     const entryId = `treatment-entry-${treatmentEntryCounter}`;
 
     const numLabel = list.children.length + 1;
-    const headerText = time ? `${numLabel} (${time}〜)` : `${numLabel}`;
+    let headerText = String(numLabel);
+    if (time) {
+        headerText += opts.duration ? ` (${time}〜 ${opts.duration}分)` : ` (${time}〜)`;
+    }
 
     // 患者リストと一致しなかった場合、元の表記を出して手動で選べるようにする
-    const hintHtml = unmatchedName
-        ? `<div class="entry-hint">表の記載：${escapeHtml(unmatchedName)}<br>患者リストに一致する名前がありません。選び直してください</div>`
+    const notes = [];
+    if (opts.unmatchedName) {
+        notes.push(`予定の記載：${escapeHtml(opts.unmatchedName)}<br>患者リストに一致する名前がありません。選び直してください`);
+    }
+    if (opts.note) {
+        notes.push(`備考：${escapeHtml(opts.note)}`);
+    }
+    const hintHtml = notes.length
+        ? `<div class="entry-hint">${notes.join('<br>')}</div>`
         : '';
 
     const entry = document.createElement('div');
@@ -433,8 +444,29 @@ function getDayOfWeek(dateString) {
 }
 
 /**
- * 基本スケジュール（施術記録）を読み込む
+ * 施術スケジュールの取得元。
+ * Notionの訪問予定データベースが設定されていればそちらを使い、
+ * 未設定のときだけ従来のスプレッドシート側を見る。
  */
+async function getTreatmentSchedules() {
+    const useNotion = !!getNotionVisitPlanDb();
+
+    let schedules = useNotion ? getVisitPlans() : getSchedules();
+
+    if (!schedules || schedules.length === 0) {
+        showLoading('訪問予定を取得中...');
+        try {
+            schedules = useNotion
+                ? await fetchVisitPlansFromNotion()
+                : await fetchSchedulesFromGas();
+        } finally {
+            hideLoading();
+        }
+    }
+
+    return schedules;
+}
+
 async function loadScheduleTreatment() {
     const staff = document.getElementById('treatment-staff').value;
     const baseDate = document.getElementById('treatment-date').value;
@@ -445,14 +477,7 @@ async function loadScheduleTreatment() {
     }
 
     try {
-        let schedules = getSchedules();
-
-        // ローカルキャッシュに無い、または更新したての場合は念のため取得（通常は設定画面でキャッシュ済み）
-        if (!schedules || schedules.length === 0) {
-            showLoading('スケジュールを取得中...');
-            schedules = await fetchSchedulesFromGas();
-            hideLoading();
-        }
+        const schedules = await getTreatmentSchedules();
 
         const dayName = getDayOfWeek(baseDate);
 
@@ -488,7 +513,11 @@ async function loadScheduleTreatment() {
             splitScheduleNames(item.name).forEach(rawName => {
                 const matched = findPatientByName(rawName);
                 if (!matched) unmatchedCount++;
-                addTreatmentEntry(matched, '', item.time, matched ? '' : rawName);
+                addTreatmentEntry(matched, '', item.time, {
+                    unmatchedName: matched ? '' : rawName,
+                    duration: item.duration,
+                    note: item.note
+                });
                 addedCount++;
             });
         });
@@ -1030,6 +1059,7 @@ function setupViewScreen() {
 function initSettingsScreen() {
     document.getElementById('setting-notion-api-key').value = getNotionApiKey();
     document.getElementById('setting-notion-patient-db').value = getNotionPatientDb();
+    document.getElementById('setting-notion-visit-plan-db').value = getNotionVisitPlanDb();
     document.getElementById('setting-notion-care-manager-db').value = getNotionCareManagerDb();
     document.getElementById('setting-gas-spreadsheet-url').value = getGasSpreadsheetUrl();
     document.getElementById('setting-gas-api-url').value = getGasApiUrl();
@@ -1040,6 +1070,7 @@ function initSettingsScreen() {
 function saveSettings() {
     const notionApiKey = document.getElementById('setting-notion-api-key').value;
     const notionPatientDb = document.getElementById('setting-notion-patient-db').value;
+    const notionVisitPlanDb = document.getElementById('setting-notion-visit-plan-db').value.trim();
     const notionCareManagerDb = document.getElementById('setting-notion-care-manager-db').value;
     const gasSpreadsheetUrl = document.getElementById('setting-gas-spreadsheet-url').value;
     const gasApiUrl = document.getElementById('setting-gas-api-url').value;
@@ -1047,6 +1078,7 @@ function saveSettings() {
 
     saveNotionApiKey(notionApiKey);
     saveNotionPatientDb(notionPatientDb);
+    saveNotionVisitPlanDb(notionVisitPlanDb);
     saveNotionCareManagerDb(notionCareManagerDb);
     saveGasSpreadsheetUrl(gasSpreadsheetUrl);
     saveGasApiUrl(gasApiUrl);
@@ -1132,12 +1164,16 @@ async function reloadPatients() {
         failed.push('患者リスト');
     }
 
-    // 基本スケジュール
+    // 訪問予定（患者リレーションを名前に直すため、患者リストの後に取得する）
     try {
-        await fetchSchedulesFromGas();
+        if (getNotionVisitPlanDb()) {
+            await fetchVisitPlansFromNotion();
+        } else {
+            await fetchSchedulesFromGas();
+        }
     } catch (e) {
         console.warn('Schedule reload failed:', e);
-        failed.push('スケジュール');
+        failed.push('訪問予定');
     }
 
     hideLoading();
