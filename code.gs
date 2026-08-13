@@ -25,6 +25,20 @@ const SHEET_NAMES = {
 };
 
 /**
+ * このWebアプリは「全員アクセス可」でデプロイする必要があるため、
+ * 合言葉（スクリプトプロパティ APP_TOKEN）が一致しないリクエストは拒否する。
+ * これが無いと URL を知っているだけで誰でも施術記録・営業記録を読み書きできてしまう。
+ */
+function isAuthorized(params) {
+  const expected = PropertiesService.getScriptProperties().getProperty('APP_TOKEN');
+  if (!expected) {
+    // APP_TOKEN未設定の間は今まで通り誰でも通す（設定直後に全員締め出さないため）
+    return true;
+  }
+  return params.token === expected;
+}
+
+/**
  * POSTリクエスト処理
  */
 function doPost(e) {
@@ -32,9 +46,15 @@ function doPost(e) {
     const params = JSON.parse(e.postData.contents);
     const action = params.action;
     const data = params.data || {};
-    
+
+    if (action !== 'ping' && !isAuthorized(params)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ success: false, error: 'unauthorized' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     let result;
-    
+
     switch (action) {
       case 'saveTreatment':
         result = saveTreatmentRecord(data);
@@ -286,9 +306,12 @@ function getStaffData() {
  */
 function proxyNotionPatients(data) {
   try {
-    const apiKey = data.apiKey;
+    // サーバー側（スクリプトプロパティ）のキーを優先する。
+    // クライアントから送られてきたキーは、サーバー側が未設定のときの後方互換用。
+    const serverApiKey = PropertiesService.getScriptProperties().getProperty('NOTION_API_KEY');
+    const apiKey = serverApiKey || data.apiKey;
     const dbId = data.dbId;
-    
+
     if (!apiKey || !dbId) {
       throw new Error('APIキーまたはデータベースIDが指定されていません');
     }

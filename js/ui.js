@@ -1064,6 +1064,7 @@ function initSettingsScreen() {
     document.getElementById('setting-gas-spreadsheet-url').value = getGasSpreadsheetUrl();
     document.getElementById('setting-gas-api-url').value = getGasApiUrl();
     document.getElementById('setting-gas-schedule-url').value = getGasScheduleUrl();
+    document.getElementById('setting-app-token').value = getAppToken();
     updateSyncBadge();
 }
 
@@ -1075,6 +1076,7 @@ function saveSettings() {
     const gasSpreadsheetUrl = document.getElementById('setting-gas-spreadsheet-url').value;
     const gasApiUrl = document.getElementById('setting-gas-api-url').value;
     const gasScheduleUrl = document.getElementById('setting-gas-schedule-url').value;
+    const appToken = document.getElementById('setting-app-token').value;
 
     saveNotionApiKey(notionApiKey);
     saveNotionPatientDb(notionPatientDb);
@@ -1083,6 +1085,7 @@ function saveSettings() {
     saveGasSpreadsheetUrl(gasSpreadsheetUrl);
     saveGasApiUrl(gasApiUrl);
     saveGasScheduleUrl(gasScheduleUrl);
+    saveAppToken(appToken);
 
     showToast('設定を保存しました');
 }

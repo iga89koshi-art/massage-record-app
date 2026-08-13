@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
     GAS_SPREADSHEET_URL: 'gas_spreadsheet_url',
     GAS_API_URL: 'gas_api_url',
     GAS_SCHEDULE_URL: 'gas_schedule_url',
+    APP_TOKEN: 'app_token',
     OFFLINE_QUEUE: 'offline_queue',
     TREATMENT_DRAFT: 'treatment_draft',
     SALES_DRAFT: 'sales_draft',
@@ -203,6 +204,20 @@ function saveGasScheduleUrl(url) {
 
 function getGasScheduleUrl() {
     return getFromStorage(STORAGE_KEYS.GAS_SCHEDULE_URL, '');
+}
+
+/**
+ * バックエンド（GAS）を呼ぶときに一緒に送る合言葉。
+ * これが無いと doPost 側で誰でも施術記録・営業記録を読み書きできてしまう。
+ */
+function saveAppToken(token) {
+    const encrypted = encrypt(token);
+    return saveToStorage(STORAGE_KEYS.APP_TOKEN, encrypted);
+}
+
+function getAppToken() {
+    const encrypted = getFromStorage(STORAGE_KEYS.APP_TOKEN);
+    return encrypted ? decrypt(encrypted) : '';
 }
 
 // === オフラインキュー ===

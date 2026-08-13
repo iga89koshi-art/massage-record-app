@@ -18,7 +18,8 @@ function collectShareableSettings() {
         gasSpreadsheetUrl: getGasSpreadsheetUrl(),
         gasApiUrl: getGasApiUrl(),
         gasScheduleUrl: getGasScheduleUrl(),
-        salesPassword: getPassword()
+        salesPassword: getPassword(),
+        appToken: getAppToken()
     };
 }
 
@@ -42,6 +43,7 @@ function applyShareableSettings(settings) {
     apply(settings.gasApiUrl, saveGasApiUrl);
     apply(settings.gasScheduleUrl, saveGasScheduleUrl);
     apply(settings.salesPassword, savePassword);
+    apply(settings.appToken, saveAppToken);
 }
 
 // === 文字列とバイト列の変換 ===

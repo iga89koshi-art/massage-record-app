@@ -12,7 +12,8 @@ async function callGasApi(action, data = {}, apiUrl) {
 
     const payload = {
         action: action,
-        data: data
+        data: data,
+        token: getAppToken()
     };
 
     try {
