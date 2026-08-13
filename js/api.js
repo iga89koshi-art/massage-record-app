@@ -230,7 +230,9 @@ async function fetchVisitPlansFromNotion() {
     const apiKey = getNotionApiKey();
     const dbId = getNotionVisitPlanDb();
 
-    if (!apiKey || !dbId) {
+    // APIキーはサーバー側（スクリプトプロパティ NOTION_API_KEY）にあれば空でよい。
+    // 空のまま送り、サーバー側にも無ければサーバーがエラーを返す。
+    if (!dbId) {
         throw new Error('訪問予定データベースの設定が不完全です');
     }
 
@@ -278,7 +280,8 @@ async function fetchPatientsFromNotion() {
     const apiKey = getNotionApiKey();
     const dbId = getNotionPatientDb();
 
-    if (!apiKey || !dbId) {
+    // APIキーはサーバー側（スクリプトプロパティ NOTION_API_KEY）にあれば空でよい。
+    if (!dbId) {
         throw new Error('Notion APIの設定が不完全です');
     }
 
