@@ -88,6 +88,12 @@ function doPost(e) {
       case 'getStaff':
         result = getStaffData();
         break;
+      case 'getLastWeekTreatments':
+        result = getLastWeekRecords(data, 'treatment');
+        break;
+      case 'getLastWeekSales':
+        result = getLastWeekRecords(data, 'sales');
+        break;
       case 'proxyNotionPatients':
         result = proxyNotionPatients(data);
         break;
@@ -220,7 +226,12 @@ function getTreatmentRecords(filters) {
         timestamp: row[5] || '',
         notionSynced: row[6] || ''
       };
-      
+
+      // 日付をフォーマット
+      if (record.date instanceof Date) {
+        record.date = Utilities.formatDate(record.date, 'JST', 'yyyy-MM-dd');
+      }
+
       // フィルター適用
       if (filters.patient && record.patientName !== filters.patient) {
         continue;
@@ -271,7 +282,12 @@ function getSalesRecords(filters) {
         timestamp: row[6] || '',
         notionSynced: row[7] || ''
       };
-      
+
+      // 日付をフォーマット
+      if (record.date instanceof Date) {
+        record.date = Utilities.formatDate(record.date, 'JST', 'yyyy-MM-dd');
+      }
+
       // フィルター適用
       if (filters.startDate && record.date < filters.startDate) {
         continue;
@@ -387,6 +403,116 @@ function saveOperationRecord(data) {
     return { success: false, error: error.toString() };
   }
 }
+/**
+ * 先週の記録コピー用データ取得
+ * @param {Object} data - { staff: 担当者名, baseDate: 基準日(yyyy-MM-dd) }
+ * @param {string} type - 'treatment' or 'sales'
+ */
+function getLastWeekRecords(data, type) {
+  try {
+    var sheetName = type === 'treatment' ? SHEET_NAMES.TREATMENT : SHEET_NAMES.SALES;
+    var sheet = getSpreadsheet().getSheetByName(sheetName);
+    
+    if (!sheet) {
+      throw new Error(sheetName + 'シートが見つかりません');
+    }
+    
+    var staffName = data.staff;
+    var baseDate = data.baseDate ? new Date(data.baseDate + 'T00:00:00+09:00') : new Date();
+    
+    // 7日前と14日前の日付を計算
+    var oneWeekAgo = new Date(baseDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    var twoWeeksAgo = new Date(baseDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+    var oneWeekStr = Utilities.formatDate(oneWeekAgo, 'JST', 'yyyy-MM-dd');
+    var twoWeeksStr = Utilities.formatDate(twoWeeksAgo, 'JST', 'yyyy-MM-dd');
+    
+    var allData = sheet.getDataRange().getValues();
+    
+    // 施術記録: [日付, 患者ID, 患者名, 担当者, メモ, ...]
+    // 営業記録: [日付, ケアマネID, 事業所名, ケアマネ名, 営業担当, 内容, ...]
+    var nameCol = type === 'treatment' ? 2 : 3;  // 患者名 or ケアマネ名
+    var staffCol = type === 'treatment' ? 3 : 4;  // 担当者 or 営業担当
+    var memoCol = type === 'treatment' ? 4 : 5;   // メモ or 内容
+    
+    // Step1: 7日前に担当者が訪問した対象者を抽出
+    var targetNames = [];
+    for (var i = 1; i < allData.length; i++) {
+      var rowDate = allData[i][0];
+      if (rowDate instanceof Date) {
+        rowDate = Utilities.formatDate(rowDate, 'JST', 'yyyy-MM-dd');
+      }
+      var rowName = allData[i][nameCol] || '';
+      var rowStaff = allData[i][staffCol] || '';
+      
+      if (rowDate === oneWeekStr && rowStaff === staffName && rowName !== '') {
+        if (targetNames.indexOf(rowName) === -1) {
+          targetNames.push(rowName);
+        }
+      }
+    }
+    
+    // 7日前に該当なし → 14日前で再検索
+    var searchedDate = oneWeekStr;
+    if (targetNames.length === 0) {
+      searchedDate = twoWeeksStr;
+      for (var i = 1; i < allData.length; i++) {
+        var rowDate = allData[i][0];
+        if (rowDate instanceof Date) {
+          rowDate = Utilities.formatDate(rowDate, 'JST', 'yyyy-MM-dd');
+        }
+        var rowName = allData[i][nameCol] || '';
+        var rowStaff = allData[i][staffCol] || '';
+        
+        if (rowDate === twoWeeksStr && rowStaff === staffName && rowName !== '') {
+          if (targetNames.indexOf(rowName) === -1) {
+            targetNames.push(rowName);
+          }
+        }
+      }
+    }
+    
+    if (targetNames.length === 0) {
+      return { success: true, data: [], searchedDate: searchedDate, message: 'no_records' };
+    }
+    
+    // Step2: 各対象者の最新訪問のメモを取得
+    var results = [];
+    for (var t = 0; t < targetNames.length; t++) {
+      var name = targetNames[t];
+      var latestDate = '';
+      var latestMemo = '';
+      
+      for (var i = 1; i < allData.length; i++) {
+        var rowName = allData[i][nameCol] || '';
+        if (rowName !== name) continue;
+        
+        var rowDate = allData[i][0];
+        if (rowDate instanceof Date) {
+          rowDate = Utilities.formatDate(rowDate, 'JST', 'yyyy-MM-dd');
+        }
+        
+        if (rowDate > latestDate) {
+          latestDate = rowDate;
+          latestMemo = allData[i][memoCol] || '';
+        }
+      }
+      
+      results.push({
+        name: name,
+        memo: latestMemo,
+        latestDate: latestDate
+      });
+    }
+    
+    return { success: true, data: results, searchedDate: searchedDate };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+
+
+
 
 /**
  * 担当者マスタを取得
