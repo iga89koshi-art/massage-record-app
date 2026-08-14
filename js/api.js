@@ -386,10 +386,10 @@ async function fetchPatientsFromNotion() {
 
 // 院で固定のデータベース。設定画面には出さない。
 // 患者DBだけは設定画面で入れたものを優先する（既存の患者取得と同じDBのため）。
-const LABEL_DOCTOR_DB_ID = 'f02e086e-831e-4fdf-9772-2fa7a8c77ed1';
-const LABEL_CARE_MANAGER_DB_ID = '2f30b49b-5f34-802a-880f-000b21f593a5';
-const LABEL_OFFICE_DB_ID = 'c3d24b81-0c47-4772-b698-59b6564bded5';
-const LABEL_PATIENT_DB_ID = '2f30b49b-5f34-80c5-9d1c-000b583ba076';
+const LABEL_DOCTOR_DB_ID = '8486e529-31f0-4a0c-a62d-c498f4db0588';
+const LABEL_CARE_MANAGER_DB_ID = '2f30b49b-5f34-8078-92b8-ca3c91dfe98e';
+const LABEL_OFFICE_DB_ID = '4d56ed6c-0415-4340-9b9c-96f76d108ea6';
+const LABEL_PATIENT_DB_ID = '2f30b49b-5f34-8023-842d-c02ea8aa05d1';
 
 /**
  * Notionのプロパティ1つを文字列にする（title / rich_text / select / 電話番号）
