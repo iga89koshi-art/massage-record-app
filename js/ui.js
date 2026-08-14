@@ -1548,12 +1548,39 @@ async function loadLabelTargetsIfEmpty() {
 async function refreshLabelTargets() {
     try {
         showLoading('宛先を取得中...');
+
+        // 取り直す前に、選ばれている宛先を名前で覚えておく。
+        // 24件積み上げた後に押しても選択が消えないようにするため。
+        const checkedNames = {};
+        LABEL_TABS.forEach(tab => {
+            checkedNames[tab.key] = getLabelTabTargets(tab.key)
+                .filter(t => t.checked)
+                .map(t => t.name);
+        });
+
         labelTargets = await fetchLabelTargetsFromNotion();
+
+        // 取り直した宛先に選択を戻す（消えた宛先は自然に落ちる）
+        let restored = 0;
+        LABEL_TABS.forEach(tab => {
+            const names = checkedNames[tab.key] || [];
+            if (names.length === 0) return;
+            getLabelTabTargets(tab.key).forEach(target => {
+                if (names.indexOf(target.name) !== -1 && target.address) {
+                    target.checked = true;
+                    restored += 1;
+                }
+            });
+        });
+        saveLabelTargets(labelTargets);
+
         hideLoading();
         renderLabelScreen();
         const loaded = LABEL_TABS
             .reduce((sum, tab) => sum + getLabelTabTargets(tab.key).length, 0);
-        showToast(`宛先を${loaded}件読み込みました`);
+        showToast(restored > 0
+            ? `宛先を${loaded}件読み込みました（選択${restored}件は維持）`
+            : `宛先を${loaded}件読み込みました`);
     } catch (error) {
         hideLoading();
         console.error('Refresh label targets failed:', error);
