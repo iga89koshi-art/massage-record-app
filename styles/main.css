@@ -68,11 +68,11 @@
     /* ラベル間の横の隙間 */
     --label-gap-y: 4mm;
     /* ラベル間の縦の隙間 */
-    --label-cell-padding: 3mm;
+    --label-cell-padding: 2mm;
     /* ラベル1片の内側の余白 */
-    --label-address-size: 9pt;
+    --label-address-size: 8pt;
     /* 住所の文字の大きさ */
-    --label-name-size: 11pt;
+    --label-name-size: 10.5pt;
     /* 宛名の行だけ大きくする */
 }
 
@@ -1354,4 +1354,29 @@ tbody tr:hover {
 /* ダークモード対応（将来的な拡張用） */
 @media (prefers-color-scheme: dark) {
     /* 必要に応じてダークモードスタイルを追加 */
+}
+/* 印刷ダイアログの設定を促す注意書き。設定を間違えると面付けが崩れるため目立たせる。 */
+.label-print-notice {
+    background: #FFF8E1;
+    border: 1px solid var(--warning-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.label-print-notice strong {
+    color: #E65100;
+}
+
+.label-print-notice ul {
+    margin: var(--spacing-sm) 0;
+    padding-left: 1.2em;
+}
+
+@media print {
+    .label-print-notice {
+        display: none !important;
+    }
 }

@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=14">
+    <link rel="stylesheet" href="./styles/main.css?v=15">
 </head>
 
 <body>
@@ -305,6 +305,17 @@
                 <!-- 動的に追加される -->
             </div>
 
+            <!-- 印刷ダイアログの設定を間違えると面付けが崩れるので、ここで必ず知らせる -->
+            <div class="label-print-notice">
+                <strong>印刷ダイアログで必ず設定してください</strong>
+                <ul>
+                    <li>余白 … <strong>なし</strong>（「デフォルト」のままだと1枚に6件しか入りません）</li>
+                    <li>ヘッダーとフッター … <strong>オフ</strong>（URLや日付が刷り込まれるのを防ぐ）</li>
+                    <li>倍率 … <strong>100%</strong>（「用紙に合わせる」は使わない）</li>
+                </ul>
+                Chromeなら印刷画面の「詳細設定」の中にあります。一度設定すれば次回から記憶されます。
+            </div>
+
             <!-- 印刷プレビュー（印刷されるのはここだけ） -->
             <h3 class="label-preview-title">印刷プレビュー（A-one 72424 / 24面）</h3>
             <p class="section-note">枠線は画面だけのものです。位置がズレたら「枠線を印刷」で試し刷りして確かめてください。</p>
@@ -437,12 +448,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=14"></script>
-    <script src="./js/storage.js?v=14"></script>
-    <script src="./js/config-share.js?v=14"></script>
-    <script src="./js/api.js?v=14"></script>
-    <script src="./js/ui.js?v=14"></script>
-    <script src="./js/app.js?v=14"></script>
+    <script src="./js/utils.js?v=15"></script>
+    <script src="./js/storage.js?v=15"></script>
+    <script src="./js/config-share.js?v=15"></script>
+    <script src="./js/api.js?v=15"></script>
+    <script src="./js/ui.js?v=15"></script>
+    <script src="./js/app.js?v=15"></script>
 </body>
 
 </html>
