@@ -115,6 +115,36 @@ async function getSalesRecords(filters = {}) {
     );
 }
 
+// === 施術録（療養費の保険記録） ===
+
+async function saveOperationRecord(record) {
+    if (!navigator.onLine) {
+        // オフライン時はキューに追加
+        addToOfflineQueue({
+            type: 'operation',
+            data: record
+        });
+        refreshSyncBadgeSafe();
+        requestBackgroundSync();
+        return { success: true, offline: true };
+    }
+
+    return await callApiWithRetry(() =>
+        callGasApi('saveOperation', record)
+    );
+}
+
+/**
+ * 患者DBの基本施術（次回の既定値）を更新する。
+ * 施術録の保存とは切り離した「おまけ」の更新なので、
+ * 失敗しても記録の保存は成功扱いにする（呼び出し側で握りつぶす前提）。
+ */
+async function updatePatientBaseTreatment(patientId, parts, treatments) {
+    return await callApiWithRetry(() =>
+        callGasApi('updatePatientBase', { patientId, parts, treatments }), 2
+    );
+}
+
 // === 基本スケジュール ===
 
 const WEEKDAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'];
@@ -173,6 +203,13 @@ async function fetchSchedulesFromGas() {
 
 function plainText(richText) {
     return (richText || []).map(t => t.plain_text).join('').trim();
+}
+
+/**
+ * Notionのマルチセレクトを名前の配列にする
+ */
+function multiSelectNames(prop) {
+    return ((prop && prop.multi_select) || []).map(o => o.name);
 }
 
 /**
@@ -322,10 +359,17 @@ async function fetchPatientsFromNotion() {
                 }
             }
 
+            // 3. 施術録のチェック既定値（マルチセレクト）
+            //    ここに持たせておくことで、施術録画面は通信なしで初期表示できる
+            const baseParts = multiSelectNames(item.properties?.['基本施術部位']);
+            const baseTreatments = multiSelectNames(item.properties?.['基本施術内容']);
+
             return {
                 id: item.id,
                 name: name,
-                reading: reading
+                reading: reading,
+                baseParts: baseParts,
+                baseTreatments: baseTreatments
             };
         });
 
@@ -413,6 +457,8 @@ async function syncOfflineQueue() {
                 await callApiWithRetry(() => callGasApi('saveTreatment', item.data), 2);
             } else if (item.type === 'sales') {
                 await callApiWithRetry(() => callGasApi('saveSales', item.data), 2);
+            } else if (item.type === 'operation') {
+                await callApiWithRetry(() => callGasApi('saveOperation', item.data), 2);
             }
 
             removeFromOfflineQueue(item.id);

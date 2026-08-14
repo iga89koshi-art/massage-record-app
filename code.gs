@@ -21,8 +21,25 @@ const SHEET_NAMES = {
   TREATMENT: '施術記録',
   SALES: '営業記録',
   STAFF: '担当者マスタ',
-  SCHEDULE: '基本スケジュール'
+  SCHEDULE: '基本スケジュール',
+  OPERATION: '施術録'
 };
+
+/**
+ * 施術録（療養費の裏付けとなる保険記録）で使うチェック項目。
+ * 並び順がそのままシートの列順・記録文の語順になる。
+ */
+const OPERATION_PARTS = ['頸部', '肩部', '背部', '腰部', '上肢', '下肢'];
+const OPERATION_TREATMENTS = ['刺鍼', 'てい鍼', '電子温灸器'];
+// 「部位」「内容」はレセコン取り込み用のカンマ区切り列。
+// 頸部〜電子温灸器の個別列は人が見るためのもので、両方を残す。
+// 列を後から足せるよう、位置は必ずこの配列から引くこと（数字を直接書かない）。
+const OPERATION_HEADERS = ['日付', '患者ID', '患者名', '施術者', '部位', '内容']
+  .concat(OPERATION_PARTS)
+  .concat(OPERATION_TREATMENTS)
+  .concat(['記録文', 'タイムスタンプ']);
+
+const OPERATION_DATE_COLUMN = OPERATION_HEADERS.indexOf('日付') + 1;
 
 /**
  * このWebアプリは「全員アクセス可」でデプロイする必要があるため、
@@ -76,6 +93,12 @@ function doPost(e) {
         break;
       case 'getSchedules':
         result = getBasicSchedulesData();
+        break;
+      case 'saveOperation':
+        result = saveOperationRecord(data);
+        break;
+      case 'updatePatientBase':
+        result = updatePatientBaseTreatment(data);
         break;
       case 'ping':
         result = { success: true, message: 'pong' };
@@ -268,6 +291,104 @@ function getSalesRecords(filters) {
 }
 
 /**
+ * 施術録シートを取得（無ければヘッダー付きで作る）
+ * オーナーが手作業でシートを用意しなくても保存できるようにするため。
+ */
+function getOrCreateOperationSheet() {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAMES.OPERATION);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.OPERATION);
+    sheet.appendRow(OPERATION_HEADERS);
+    sheet.getRange(1, 1, 1, OPERATION_HEADERS.length)
+      .setFontWeight('bold').setBackground('#9C27B0').setFontColor('#FFFFFF');
+
+    // 日付列は最初から文字列扱いにして、YYYY-MM-DD のまま残るようにする
+    sheet.getRange(1, OPERATION_DATE_COLUMN, sheet.getMaxRows(), 1).setNumberFormat('@');
+  }
+
+  return sheet;
+}
+
+/**
+ * 日付を YYYY-MM-DD の文字列にする。
+ * 施術記録シートには日付がDate型で入って表示形式が揺れている行があるため、
+ * 施術録では必ずISO形式の文字列で持たせる。
+ */
+function toIsoDateString(value) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, 'JST', 'yyyy-MM-dd');
+  }
+  return String(value || '').trim();
+}
+
+/**
+ * チェック内容から記録文を組み立てる
+ * 例：腰部、下肢に刺鍼、電子温灸器を施術
+ */
+function buildOperationNote(parts, treatments) {
+  if (!parts.length || !treatments.length) {
+    return '';
+  }
+  return parts.join('、') + 'に' + treatments.join('、') + 'を施術';
+}
+
+/**
+ * 施術録を保存（療養費の裏付けとなる保険記録。患者の様子は書かない）
+ */
+function saveOperationRecord(data) {
+  try {
+    const sheet = getOrCreateOperationSheet();
+
+    const parts = OPERATION_PARTS.filter(function (name) {
+      return (data.parts || []).indexOf(name) !== -1;
+    });
+    const treatments = OPERATION_TREATMENTS.filter(function (name) {
+      return (data.treatments || []).indexOf(name) !== -1;
+    });
+
+    if (!parts.length || !treatments.length) {
+      throw new Error('部位と施術内容を1つ以上選んでください');
+    }
+
+    const isoDate = toIsoDateString(data.date);
+
+    const row = [
+      isoDate,
+      data.patientId || '',
+      data.patientName || '',
+      data.staff || '',
+      // レセコン取り込み用のカンマ区切り
+      parts.join(','),
+      treatments.join(',')
+    ];
+
+    // 人が見るための個別チェック列
+    OPERATION_PARTS.forEach(function (name) {
+      row.push(parts.indexOf(name) !== -1 ? 'TRUE' : '');
+    });
+    OPERATION_TREATMENTS.forEach(function (name) {
+      row.push(treatments.indexOf(name) !== -1 ? 'TRUE' : '');
+    });
+
+    row.push(data.note || buildOperationNote(parts, treatments));
+    row.push(data.timestamp || new Date().toISOString());
+
+    sheet.appendRow(row);
+
+    // 日付がDate型に変換されて表示形式で揺れないよう、書式を文字列にして入れ直す
+    const dateCell = sheet.getRange(sheet.getLastRow(), OPERATION_DATE_COLUMN);
+    dateCell.setNumberFormat('@');
+    dateCell.setValue(isoDate);
+
+    return { success: true, message: '施術録を保存しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * 担当者マスタを取得
  */
 function getStaffData() {
@@ -364,6 +485,68 @@ function proxyNotionPatients(data) {
 }
 
 /**
+ * 患者データベース（Notion）の基本施術を更新する。
+ * 施術録で「1度入力したら次回から既定値になる」を実現するための書き込み。
+ *
+ * 患者DBにはレセコン同期・営業管理アプリ・手作業という別の書き込み経路があるため、
+ * ここでは「基本施術部位」「基本施術内容」の2つ以外には絶対に触れない。
+ * 値も定数の一覧に無いものは弾き、マルチセレクトに知らない選択肢が増えないようにする。
+ */
+function updatePatientBaseTreatment(data) {
+  try {
+    // proxyNotionPatientsと同じく、サーバー側（スクリプトプロパティ）のキーを優先する
+    const serverApiKey = PropertiesService.getScriptProperties().getProperty('NOTION_API_KEY');
+    const apiKey = serverApiKey || data.apiKey;
+    const pageId = data.patientId;
+
+    if (!apiKey || !pageId) {
+      throw new Error('APIキーまたは患者IDが指定されていません');
+    }
+
+    const parts = OPERATION_PARTS.filter(function (name) {
+      return (data.parts || []).indexOf(name) !== -1;
+    });
+    const treatments = OPERATION_TREATMENTS.filter(function (name) {
+      return (data.treatments || []).indexOf(name) !== -1;
+    });
+
+    const toOptions = function (names) {
+      return names.map(function (name) {
+        return { name: name };
+      });
+    };
+
+    // 送るのはこの2つのプロパティだけ
+    const properties = {
+      '基本施術部位': { multi_select: toOptions(parts) },
+      '基本施術内容': { multi_select: toOptions(treatments) }
+    };
+
+    const options = {
+      method: 'patch',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ properties: properties }),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(`https://api.notion.com/v1/pages/${pageId}`, options);
+    const statusCode = response.getResponseCode();
+
+    if (statusCode !== 200) {
+      throw new Error(`Notion API error: ${statusCode} - ${response.getContentText()}`);
+    }
+
+    return { success: true, message: '基本施術を更新しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
  * スプレッドシート初期化（初回セットアップ用）
  * スクリプトエディタから手動実行
  */
@@ -386,6 +569,9 @@ function initializeSpreadsheet() {
     salesSheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#4CAF50').setFontColor('#FFFFFF');
   }
   
+  // 施術録シート（療養費の保険記録）
+  getOrCreateOperationSheet();
+
   // 担当者マスタシート
   let staffSheet = ss.getSheetByName(SHEET_NAMES.STAFF);
   if (!staffSheet) {

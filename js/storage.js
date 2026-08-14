@@ -73,6 +73,12 @@ function clearAllStorage() {
 
 // === 患者データ ===
 
+/**
+ * 患者1件の形：
+ * { id, name, reading, baseParts: [部位...], baseTreatments: [施術内容...] }
+ * baseParts / baseTreatments はNotion患者DBの「基本施術部位」「基本施術内容」で、
+ * 施術録画面のチェックの既定値に使う（通信せずここから引く）。
+ */
 function savePatients(patients) {
     return saveToStorage(STORAGE_KEYS.PATIENTS, patients);
 }

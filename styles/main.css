@@ -16,6 +16,8 @@
     --warning-color: #FF9800;
     --danger-color: #F44336;
     --neutral-color: #607D8B;
+    --accent-color: #7E57C2;
+    --accent-dark: #5E35B1;
 
     /* グレースケール */
     --bg-color: #F5F5F5;
@@ -172,6 +174,11 @@ body {
 
 .menu-btn.neutral {
     background: linear-gradient(135deg, var(--neutral-color), #455A64);
+    color: white;
+}
+
+.menu-btn.accent {
+    background: linear-gradient(135deg, var(--accent-color), var(--accent-dark));
     color: white;
 }
 
@@ -700,6 +707,45 @@ tbody tr:hover {
     font-size: 13px;
     line-height: 1.4;
     margin-bottom: var(--spacing-sm);
+}
+
+/* 施術録のチェックボックス（部位・施術内容） */
+.check-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+}
+
+/* 3列に並べつつ、文字数の多い項目は自動で1行に落とす */
+.check-item {
+    flex: 1 1 calc(33.333% - 8px);
+    min-width: 92px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 0;
+    padding: 10px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-color);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.check-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    accent-color: var(--primary-color);
+}
+
+.check-item:has(input:checked) {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+    color: var(--primary-dark);
 }
 
 /* 削除ボタン（小さめ、赤系） */

@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=3">
+    <link rel="stylesheet" href="./styles/main.css?v=11">
 </head>
 
 <body>
@@ -39,6 +39,10 @@
                 <button id="btn-treatment" class="menu-btn primary">
                     <span class="icon">📝</span>
                     <span class="label">施術記録を入力</span>
+                </button>
+                <button id="btn-operation" class="menu-btn accent">
+                    <span class="icon">🩺</span>
+                    <span class="label">施術録</span>
                 </button>
                 <button id="btn-sales" class="menu-btn secondary">
                     <span class="icon">📞</span>
@@ -95,6 +99,49 @@
             </div>
             <div class="button-group">
                 <button type="button" id="btn-back-treatment" class="btn btn-secondary">戻る</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 施術録画面（療養費の保険記録） -->
+    <div id="operation" class="screen">
+        <div class="container">
+            <header class="screen-header">
+                <h2>🩺 施術録</h2>
+            </header>
+
+            <!-- 共通項目 -->
+            <div class="batch-common">
+                <div class="form-group">
+                    <label for="operation-date">日付</label>
+                    <input type="date" id="operation-date" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="operation-staff">施術者 <span class="required">*</span></label>
+                    <select id="operation-staff" class="form-control" required>
+                        <option value="">選択してください</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 記録リスト -->
+            <div id="operation-batch-list" class="batch-list">
+                <!-- 動的に追加される -->
+            </div>
+
+            <!-- 操作ボタン -->
+            <div class="batch-list-actions">
+                <button type="button" id="btn-add-operation-entry" class="btn btn-add-entry">＋ 患者を追加</button>
+                <button type="button" id="btn-load-schedule-operation" class="btn btn-copy-last-week">📅
+                    スケジュールを読込</button>
+            </div>
+
+            <div class="button-group batch-actions">
+                <button type="button" id="btn-save-batch-operation" class="btn btn-save-batch">まとめて保存</button>
+                <button type="button" id="btn-clear-operation" class="btn btn-clear-batch">クリア</button>
+            </div>
+            <div class="button-group">
+                <button type="button" id="btn-back-operation" class="btn btn-secondary">戻る</button>
             </div>
         </div>
     </div>
@@ -341,12 +388,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=10"></script>
-    <script src="./js/storage.js?v=10"></script>
-    <script src="./js/config-share.js?v=10"></script>
-    <script src="./js/api.js?v=10"></script>
-    <script src="./js/ui.js?v=10"></script>
-    <script src="./js/app.js?v=10"></script>
+    <script src="./js/utils.js?v=11"></script>
+    <script src="./js/storage.js?v=11"></script>
+    <script src="./js/config-share.js?v=11"></script>
+    <script src="./js/api.js?v=11"></script>
+    <script src="./js/ui.js?v=11"></script>
+    <script src="./js/app.js?v=11"></script>
 </body>
 
 </html>
