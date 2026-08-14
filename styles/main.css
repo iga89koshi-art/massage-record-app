@@ -609,6 +609,12 @@ tbody tr:hover {
     font-weight: 600;
 }
 
+/* 汎用の非表示。togglePanel() がこのクラスを付け外しする。
+   これが無いと設定画面の「設定コードを作る／読み込む」パネルが開きっぱなしになる。 */
+.hidden {
+    display: none;
+}
+
 .sync-banner.hidden {
     display: none;
 }
@@ -873,10 +879,6 @@ tbody tr:hover {
     margin-bottom: var(--spacing-md);
 }
 
-.schedule-day-nav.hidden {
-    display: none;
-}
-
 .schedule-day-btn {
     width: 48px;
     height: 48px;
@@ -925,10 +927,6 @@ tbody tr:hover {
     flex-direction: column;
     gap: var(--spacing-sm);
     margin-bottom: var(--spacing-md);
-}
-
-.schedule-list.hidden {
-    display: none;
 }
 
 .schedule-card {
@@ -998,10 +996,6 @@ tbody tr:hover {
 /* 週表示：月〜日を縦に積む（横スクロールはさせない） */
 .schedule-week {
     margin-bottom: var(--spacing-md);
-}
-
-.schedule-week.hidden {
-    display: none;
 }
 
 .schedule-week-day {
