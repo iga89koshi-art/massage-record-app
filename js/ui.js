@@ -41,6 +41,9 @@ function initScreen(screenId) {
         case 'sales':
             initSalesScreen();
             break;
+        case 'schedule-view':
+            initScheduleScreen();
+            break;
         case 'view':
             initViewScreen();
             break;
@@ -55,6 +58,10 @@ function initScreen(screenId) {
 function setupHomeScreen() {
     document.getElementById('btn-treatment').addEventListener('click', () => {
         showScreen('treatment');
+    });
+
+    document.getElementById('btn-schedule').addEventListener('click', () => {
+        showScreen('schedule-view');
     });
 
     document.getElementById('btn-sales').addEventListener('click', () => {
@@ -1111,6 +1118,347 @@ function renumberEntries(listId) {
 }
 
 // =============================================
+// 訪問スケジュール画面
+//
+// スマホの縦画面で「自分の今日の訪問」を操作なしで見るための画面。
+// 表（縦=時刻・横=曜日）ではなく、1画面=1人の1日のリストで見せる。
+// =============================================
+
+// 訪問予定データベースの「曜日」に合わせた月曜始まりの並び
+const SCHEDULE_DAYS = ['月', '火', '水', '木', '金', '土', '日'];
+
+let scheduleDayIndex = 0;
+let scheduleMode = 'day';
+// 取得を試したかどうか（キャッシュが空でも取得は1回だけにする）
+let scheduleFetchTried = false;
+// いま画面に出ている予定。カードのタップからは並び順の番号で引く
+let scheduleVisiblePlans = [];
+
+/**
+ * 今日の曜日を月曜始まりの 0〜6 に直す（getDay() は 日=0 なので +6 して回す）
+ */
+function getTodayScheduleDayIndex() {
+    return (new Date().getDay() + 6) % 7;
+}
+
+/**
+ * 訪問予定キャッシュのうち、施術の予定だけを返す（通信なし）
+ */
+function getTreatmentVisitPlans() {
+    return getVisitPlans().filter(plan => plan && plan.type === 'treatment' && plan.day);
+}
+
+/**
+ * 予定に実際に登場する施術者だけを重複なしで取り出す
+ */
+function getScheduleStaffList(plans) {
+    const names = [];
+    plans.forEach(plan => {
+        if (plan.staff && names.indexOf(plan.staff) === -1) {
+            names.push(plan.staff);
+        }
+    });
+    return sortJapanese(names);
+}
+
+/**
+ * 初期表示の施術者。前回選んだ人を優先し、無ければ予定件数が最多の人。
+ */
+function getDefaultScheduleStaff(plans, staffList) {
+    const remembered = getScheduleStaff();
+    if (remembered && staffList.indexOf(remembered) !== -1) {
+        return remembered;
+    }
+
+    let best = '';
+    let bestCount = -1;
+    staffList.forEach(name => {
+        const count = plans.filter(plan => plan.staff === name).length;
+        if (count > bestCount) {
+            best = name;
+            bestCount = count;
+        }
+    });
+    return best;
+}
+
+/**
+ * 時刻順に並べる。同じ時刻に複数人いる場合は患者名順。
+ */
+function sortSchedulePlans(plans) {
+    return plans.slice().sort((a, b) => {
+        const byTime = String(a.time || '').localeCompare(String(b.time || ''));
+        if (byTime !== 0) return byTime;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ja');
+    });
+}
+
+function initScheduleScreen() {
+    scheduleDayIndex = getTodayScheduleDayIndex();
+    scheduleMode = 'day';
+
+    // まずキャッシュで描く（待たせない）
+    renderScheduleScreen();
+
+    // キャッシュが空のときだけ取りに行く
+    if (getTreatmentVisitPlans().length === 0) {
+        loadVisitPlansIfEmpty();
+    }
+}
+
+/**
+ * キャッシュが空の場合の初回取得。何度も叩かないよう1回だけ試す。
+ */
+async function loadVisitPlansIfEmpty() {
+    if (scheduleFetchTried) return;
+    scheduleFetchTried = true;
+
+    if (!getNotionVisitPlanDb()) {
+        showError('訪問予定データベースが設定されていません');
+        return;
+    }
+
+    try {
+        showLoading('訪問予定を取得中...');
+        await fetchVisitPlansFromNotion();
+        renderScheduleScreen();
+    } catch (error) {
+        console.error('Load visit plans failed:', error);
+        showError('訪問予定の取得に失敗しました');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Notionから取り直して描き直す（「最新に更新」）
+ */
+async function refreshVisitPlans() {
+    if (!getNotionVisitPlanDb()) {
+        showError('訪問予定データベースが設定されていません');
+        return;
+    }
+
+    try {
+        showLoading('訪問予定を取得中...');
+        const plans = await fetchVisitPlansFromNotion();
+        hideLoading();
+        renderScheduleScreen();
+        showToast(`訪問予定を${plans.length}件読み込みました`);
+    } catch (error) {
+        hideLoading();
+        console.error('Refresh visit plans failed:', error);
+        showError('訪問予定の取得に失敗しました');
+    }
+}
+
+/**
+ * 画面全体を描き直す（曜日・施術者・表示切替のどれが変わってもここを通す）
+ */
+function renderScheduleScreen() {
+    const plans = getTreatmentVisitPlans();
+    const staffList = getScheduleStaffList(plans);
+    const select = document.getElementById('schedule-staff');
+
+    // 選択中の施術者が予定から消えた場合も含めて選び直す
+    let staff = select.value;
+    if (!staff || staffList.indexOf(staff) === -1) {
+        staff = getDefaultScheduleStaff(plans, staffList);
+    }
+
+    select.innerHTML = staffList.length
+        ? staffList.map(name => {
+            const label = escapeHtml(name);
+            return `<option value="${label}">${label}</option>`;
+        }).join('')
+        : '<option value="">予定がありません</option>';
+    select.value = staff;
+
+    document.getElementById('schedule-day-label').textContent = `${SCHEDULE_DAYS[scheduleDayIndex]}曜日`;
+
+    // タブと表示パネルの出し分け
+    document.querySelectorAll('#schedule-view .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`tab-schedule-${scheduleMode}`).classList.add('active');
+    document.getElementById('schedule-day-list').classList.toggle('hidden', scheduleMode !== 'day');
+    document.getElementById('schedule-week-list').classList.toggle('hidden', scheduleMode !== 'week');
+    // 週表示では7日まとめて出すので曜日送りは隠す
+    document.getElementById('schedule-day-nav').classList.toggle('hidden', scheduleMode === 'week');
+
+    if (scheduleMode === 'week') {
+        renderScheduleWeek(plans, staff);
+    } else {
+        renderScheduleDay(plans, staff);
+    }
+}
+
+/**
+ * 日表示。予定のある時間だけを時刻順のカードで詰めて並べる（空き時間は出さない）。
+ */
+function renderScheduleDay(plans, staff) {
+    const dayName = SCHEDULE_DAYS[scheduleDayIndex];
+    const items = sortSchedulePlans(
+        plans.filter(plan => plan.staff === staff && plan.day === dayName)
+    );
+    scheduleVisiblePlans = items;
+
+    const totalMinutes = items.reduce((sum, plan) => sum + (Number(plan.duration) || 0), 0);
+    const summary = document.getElementById('schedule-summary');
+    summary.textContent = totalMinutes > 0
+        ? `${items.length}件 / 合計${totalMinutes}分`
+        : `${items.length}件`;
+
+    const list = document.getElementById('schedule-day-list');
+
+    if (items.length === 0) {
+        list.innerHTML = '<div class="schedule-empty">この日の訪問予定はありません</div>';
+        return;
+    }
+
+    list.innerHTML = items.map((plan, index) => {
+        const meta = [];
+        if (plan.duration) meta.push(`${escapeHtml(plan.duration)}分`);
+        if (plan.note) meta.push(escapeHtml(plan.note));
+        const metaHtml = meta.length
+            ? `<span class="schedule-card-meta">${meta.join('　')}</span>`
+            : '';
+
+        return `<button type="button" class="schedule-card" onclick="openScheduleEntry(${index})">
+                    <span class="schedule-card-time">${escapeHtml(plan.time || '--:--')}</span>
+                    <span class="schedule-card-body">
+                        <span class="schedule-card-name">${escapeHtml(plan.name)}</span>
+                        ${metaHtml}
+                    </span>
+                </button>`;
+    }).join('');
+}
+
+/**
+ * 週表示。月〜日を縦に積む（横スクロールはさせない）。
+ */
+function renderScheduleWeek(plans, staff) {
+    const weekPlans = plans.filter(plan => plan.staff === staff);
+    const todayIndex = getTodayScheduleDayIndex();
+    const flat = [];
+
+    const html = SCHEDULE_DAYS.map((day, dayIndex) => {
+        const items = sortSchedulePlans(weekPlans.filter(plan => plan.day === day));
+        const todayClass = dayIndex === todayIndex ? ' is-today' : '';
+
+        const body = items.length === 0
+            ? '<div class="schedule-week-empty">予定なし</div>'
+            : items.map(plan => {
+                // 日表示と同じ番号で引けるよう、出した順に詰めていく
+                const index = flat.push(plan) - 1;
+                const duration = plan.duration
+                    ? `<span class="schedule-week-duration">${escapeHtml(plan.duration)}分</span>`
+                    : '';
+                return `<button type="button" class="schedule-week-item" onclick="openScheduleEntry(${index})">
+                            <span class="schedule-week-time">${escapeHtml(plan.time || '--:--')}</span>
+                            <span class="schedule-week-name">${escapeHtml(plan.name)}</span>
+                            ${duration}
+                        </button>`;
+            }).join('');
+
+        return `<div class="schedule-week-day${todayClass}">
+                    <div class="schedule-week-head">
+                        <span>${day}曜日</span>
+                        <span class="schedule-week-count">${items.length}件</span>
+                    </div>
+                    ${body}
+                </div>`;
+    }).join('');
+
+    document.getElementById('schedule-week-list').innerHTML = html;
+    scheduleVisiblePlans = flat;
+
+    document.getElementById('schedule-summary').textContent = `週合計 ${weekPlans.length}件`;
+}
+
+function changeScheduleDay(delta) {
+    // 月〜日を循環（月の前は日）
+    scheduleDayIndex = (scheduleDayIndex + delta + SCHEDULE_DAYS.length) % SCHEDULE_DAYS.length;
+    renderScheduleScreen();
+}
+
+function showScheduleMode(mode) {
+    scheduleMode = mode;
+    renderScheduleScreen();
+}
+
+function onScheduleStaffChange() {
+    // 次に開いた時に操作なしで同じ人が出るよう覚えておく
+    saveScheduleStaff(document.getElementById('schedule-staff').value);
+    renderScheduleScreen();
+}
+
+/**
+ * 予定のカードから施術記録の入力へ。
+ * 予定を見てそのまま記録に進めるよう、患者・施術者・今日の日付を入れた枠を足す。
+ */
+function openScheduleEntry(index) {
+    const plan = scheduleVisiblePlans[index];
+    if (!plan) return;
+
+    const staff = document.getElementById('schedule-staff').value;
+
+    showScreen('treatment');
+
+    // 予定は曜日しか持たないので、記録の日付は「今日」にする
+    document.getElementById('treatment-date').value = getToday();
+
+    const staffSelect = document.getElementById('treatment-staff');
+    const hasStaffOption = Array.prototype.some.call(
+        staffSelect.options, option => option.value === staff
+    );
+    if (hasStaffOption) {
+        staffSelect.value = staff;
+    }
+
+    // 空の枠が1つだけなら、それを予定で置き換える
+    const entries = document.querySelectorAll('#treatment-batch-list .batch-entry');
+    if (entries.length === 1 && !entries[0].querySelector('.entry-patient').value) {
+        entries[0].remove();
+    }
+
+    // 「佐藤精次 / 髙橋 伊三郎」のように1件に複数人入っている場合は分けて追加する
+    let unmatchedCount = 0;
+    splitScheduleNames(plan.name).forEach(rawName => {
+        const matched = findPatientByName(rawName);
+        if (!matched) unmatchedCount++;
+        addTreatmentEntry(matched, '', plan.time, {
+            unmatchedName: matched ? '' : rawName,
+            duration: plan.duration,
+            note: plan.note
+        });
+    });
+
+    autoSaveTreatmentDraft();
+
+    const list = document.getElementById('treatment-batch-list');
+    if (list.lastElementChild) {
+        list.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    if (unmatchedCount > 0) {
+        showToast('患者リストに一致する名前がありません。選び直してください', 4000);
+    }
+}
+
+function setupScheduleScreen() {
+    document.getElementById('btn-schedule-prev-day').addEventListener('click', () => changeScheduleDay(-1));
+    document.getElementById('btn-schedule-next-day').addEventListener('click', () => changeScheduleDay(1));
+    document.getElementById('schedule-staff').addEventListener('change', onScheduleStaffChange);
+    document.getElementById('tab-schedule-day').addEventListener('click', () => showScheduleMode('day'));
+    document.getElementById('tab-schedule-week').addEventListener('click', () => showScheduleMode('week'));
+    document.getElementById('btn-refresh-schedule').addEventListener('click', refreshVisitPlans);
+    document.getElementById('btn-back-schedule').addEventListener('click', () => {
+        showScreen('home');
+    });
+}
+
+// =============================================
 // 記録閲覧画面
 // =============================================
 
@@ -1567,6 +1915,7 @@ function setupSettingsScreen() {
 function initUI() {
     setupHomeScreen();
     setupTreatmentScreen();
+    setupScheduleScreen();
     setupSalesScreen();
     setupViewScreen();
     setupSettingsScreen();

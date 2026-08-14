@@ -16,7 +16,8 @@ const STORAGE_KEYS = {
     TREATMENT_DRAFT: 'treatment_draft',
     SALES_DRAFT: 'sales_draft',
     SCHEDULES: 'basic_schedules',
-    VISIT_PLANS: 'visit_plans'
+    VISIT_PLANS: 'visit_plans',
+    SCHEDULE_STAFF: 'schedule_staff'
 };
 
 /**
@@ -125,6 +126,19 @@ function saveVisitPlans(plans) {
 
 function getVisitPlans() {
     return getFromStorage(STORAGE_KEYS.VISIT_PLANS, []);
+}
+
+/**
+ * 訪問スケジュール画面で最後に選んだ施術者。
+ * 施術者は端末ごとにほぼ固定なので、次に開いた時は操作なしで自分の予定が出るようにする。
+ * キャッシュではなく画面の設定なので clearCache では消さない。
+ */
+function saveScheduleStaff(name) {
+    return saveToStorage(STORAGE_KEYS.SCHEDULE_STAFF, name);
+}
+
+function getScheduleStaff() {
+    return getFromStorage(STORAGE_KEYS.SCHEDULE_STAFF, '');
 }
 
 // === パスワード ===

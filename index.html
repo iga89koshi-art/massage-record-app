@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=12">
+    <link rel="stylesheet" href="./styles/main.css?v=13">
 </head>
 
 <body>
@@ -39,6 +39,10 @@
                 <button id="btn-treatment" class="menu-btn primary">
                     <span class="icon">📝</span>
                     <span class="label">施術記録を入力</span>
+                </button>
+                <button id="btn-schedule" class="menu-btn accent">
+                    <span class="icon">📅</span>
+                    <span class="label">訪問スケジュール</span>
                 </button>
                 <button id="btn-sales" class="menu-btn secondary">
                     <span class="icon">📞</span>
@@ -227,6 +231,50 @@
         </div>
     </div>
 
+    <!-- 訪問スケジュール画面 -->
+    <div id="schedule-view" class="screen">
+        <div class="container">
+            <header class="screen-header">
+                <h2>📅 訪問スケジュール</h2>
+            </header>
+
+            <!-- 曜日・施術者・表示切替 -->
+            <div class="schedule-controls">
+                <div id="schedule-day-nav" class="schedule-day-nav">
+                    <button type="button" id="btn-schedule-prev-day" class="schedule-day-btn"
+                        aria-label="前の曜日">◀</button>
+                    <span id="schedule-day-label" class="schedule-day-label">-</span>
+                    <button type="button" id="btn-schedule-next-day" class="schedule-day-btn"
+                        aria-label="次の曜日">▶</button>
+                </div>
+                <div class="form-group">
+                    <label for="schedule-staff">施術者</label>
+                    <select id="schedule-staff" class="form-control"></select>
+                </div>
+                <div class="tabs schedule-tabs">
+                    <button type="button" id="tab-schedule-day" class="tab-btn active">日</button>
+                    <button type="button" id="tab-schedule-week" class="tab-btn">週</button>
+                </div>
+                <div id="schedule-summary" class="schedule-summary"></div>
+            </div>
+
+            <!-- 日表示 -->
+            <div id="schedule-day-list" class="schedule-list">
+                <!-- 動的に追加される -->
+            </div>
+
+            <!-- 週表示 -->
+            <div id="schedule-week-list" class="schedule-week hidden">
+                <!-- 動的に追加される -->
+            </div>
+
+            <div class="button-group">
+                <button type="button" id="btn-refresh-schedule" class="btn btn-info">最新に更新</button>
+                <button type="button" id="btn-back-schedule" class="btn btn-secondary">戻る</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 設定画面 -->
     <div id="settings" class="screen">
         <div class="container">
@@ -341,12 +389,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=12"></script>
-    <script src="./js/storage.js?v=12"></script>
-    <script src="./js/config-share.js?v=12"></script>
-    <script src="./js/api.js?v=12"></script>
-    <script src="./js/ui.js?v=12"></script>
-    <script src="./js/app.js?v=12"></script>
+    <script src="./js/utils.js?v=13"></script>
+    <script src="./js/storage.js?v=13"></script>
+    <script src="./js/config-share.js?v=13"></script>
+    <script src="./js/api.js?v=13"></script>
+    <script src="./js/ui.js?v=13"></script>
+    <script src="./js/app.js?v=13"></script>
 </body>
 
 </html>
