@@ -1551,7 +1551,9 @@ async function refreshLabelTargets() {
         labelTargets = await fetchLabelTargetsFromNotion();
         hideLoading();
         renderLabelScreen();
-        showToast(`宛先を${getLabelTabTargets(labelTab).length}件読み込みました`);
+        const loaded = LABEL_TABS
+            .reduce((sum, tab) => sum + getLabelTabTargets(tab.key).length, 0);
+        showToast(`宛先を${loaded}件読み込みました`);
     } catch (error) {
         hideLoading();
         console.error('Refresh label targets failed:', error);
@@ -1605,21 +1607,48 @@ function renderLabelList() {
 }
 
 /**
- * 選択件数と必要シート数（24面で1枚）
+ * 選択件数と必要シート数（24面で1枚）。
+ * タブを跨いで積み上がるので、内訳と合計の両方を出す。
  */
 function renderLabelSummary() {
-    const count = getSelectedLabelTargets().length;
-    const sheets = Math.ceil(count / LABELS_PER_SHEET);
+    const counts = getLabelSelectionCounts();
+    const total = getSelectedLabelTargets().length;
+    const sheets = Math.ceil(total / LABELS_PER_SHEET);
+
+    const breakdown = LABEL_TABS
+        .map(tab => `${tab.label}${counts[tab.key]}件`)
+        .join(' / ');
 
     document.getElementById('label-summary').textContent =
-        `選択 ${count}件 / 必要シート数 ${sheets}枚`;
+        `${breakdown} → 合計${total}件・${sheets}シート`;
 }
 
 /**
- * 選択中の宛先。住所が無い人は選べないが、念のためここでも外す。
+ * 種別ごとの選択件数
+ */
+function getLabelSelectionCounts() {
+    const counts = {};
+    LABEL_TABS.forEach(tab => {
+        counts[tab.key] = getLabelTabTargets(tab.key)
+            .filter(target => target.checked && target.address).length;
+    });
+    return counts;
+}
+
+/**
+ * 選択中の宛先を3種別まとめて返す。
+ * 今開いているタブに関係なく、医師 → ケアマネ → 患者 の順に並べる
+ * （LABEL_TABS の並び順がそのまま印刷順になる）。
+ * 住所が無い人は選べないが、念のためここでも外す。
  */
 function getSelectedLabelTargets() {
-    return getLabelTabTargets(labelTab).filter(target => target.checked && target.address);
+    const selected = [];
+    LABEL_TABS.forEach(tab => {
+        getLabelTabTargets(tab.key).forEach(target => {
+            if (target.checked && target.address) selected.push(target);
+        });
+    });
+    return selected;
 }
 
 /**
@@ -1647,6 +1676,19 @@ function renderLabelSheet() {
     sheet.innerHTML = pages.join('');
 }
 
+// 敬称は種別で決まる。取得時にも suffix を入れているが、
+// 古いキャッシュ（ケアマネが「様」のまま）でも正しく出るよう種別を優先する。
+const LABEL_SUFFIX_BY_KIND = {
+    doctor: ' 先生 御侍史',
+    careManager: ' ケアマネジャー様',
+    patient: ' 様'
+};
+
+function getLabelSuffix(target) {
+    if (!target) return ' 様';
+    return LABEL_SUFFIX_BY_KIND[target.kind] || target.suffix || ' 様';
+}
+
 /**
  * ラベル1片の中身。名前の行だけ大きくする（医師は「先生 御侍史」付き）。
  */
@@ -1668,7 +1710,7 @@ function buildLabelCellHtml(target) {
     return `<div class="label-cell">
                 <div class="label-address">${addressLines.join('')}</div>
                 ${org}
-                <div class="label-name">　${escapeHtml(target.name)}${escapeHtml(target.suffix || ' 様')}</div>
+                <div class="label-name">　${escapeHtml(target.name)}${escapeHtml(getLabelSuffix(target))}</div>
             </div>`;
 }
 
@@ -1685,7 +1727,10 @@ function toggleLabelTarget(index, checked) {
 }
 
 /**
- * 全選択 / 全解除（住所が無い人は選択対象にしない）
+ * 全選択 / 全解除。今開いているタブにだけ効かせる。
+ * （他のタブで選んだ分を巻き込まないこと。まとめて外したいときは
+ *  clearAllLabelChecks の「すべての選択を解除」を使う）
+ * 住所が無い人は選択対象にしない。
  */
 function setAllLabelChecks(checked) {
     getLabelTabTargets(labelTab).forEach(target => {
@@ -1693,6 +1738,20 @@ function setAllLabelChecks(checked) {
     });
     saveLabelTargets(labelTargets);
     renderLabelScreen();
+}
+
+/**
+ * 3種別すべての選択を解除する
+ */
+function clearAllLabelChecks() {
+    LABEL_TABS.forEach(tab => {
+        getLabelTabTargets(tab.key).forEach(target => {
+            target.checked = false;
+        });
+    });
+    saveLabelTargets(labelTargets);
+    renderLabelScreen();
+    showToast('すべての選択を解除しました');
 }
 
 function showLabelTab(tab) {
@@ -1729,6 +1788,7 @@ function setupLabelScreen() {
 
     document.getElementById('btn-label-select-all').addEventListener('click', () => setAllLabelChecks(true));
     document.getElementById('btn-label-clear-all').addEventListener('click', () => setAllLabelChecks(false));
+    document.getElementById('btn-label-clear-every').addEventListener('click', clearAllLabelChecks);
     document.getElementById('btn-label-frame').addEventListener('click', toggleLabelFrame);
     document.getElementById('btn-label-print').addEventListener('click', printLabels);
     document.getElementById('btn-refresh-labels').addEventListener('click', refreshLabelTargets);

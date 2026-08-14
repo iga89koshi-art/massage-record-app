@@ -1145,6 +1145,15 @@ tbody tr:hover {
     margin-top: var(--spacing-sm);
 }
 
+/* 選択がタブを跨いで積み上がることの説明 */
+.label-select-note {
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin-top: var(--spacing-xs);
+}
+
 /* 宛先の一覧（チェックボックス付き） */
 .label-list {
     display: flex;

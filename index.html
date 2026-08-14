@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=15">
+    <link rel="stylesheet" href="./styles/main.css?v=16">
 </head>
 
 <body>
@@ -294,10 +294,12 @@
                     <button type="button" id="tab-label-patient" class="tab-btn">患者</button>
                 </div>
                 <div class="button-group-inline">
-                    <button type="button" id="btn-label-select-all" class="btn btn-info">全選択</button>
-                    <button type="button" id="btn-label-clear-all" class="btn btn-info">全解除</button>
+                    <button type="button" id="btn-label-select-all" class="btn btn-info">このタブを全選択</button>
+                    <button type="button" id="btn-label-clear-all" class="btn btn-info">このタブを全解除</button>
+                    <button type="button" id="btn-label-clear-every" class="btn btn-info">すべての選択を解除</button>
                 </div>
                 <div id="label-summary" class="label-summary"></div>
+                <p class="label-select-note">選択はタブを跨いで積み上がります。医師・ケアマネ・患者を混ぜて1枚（24面）に印刷できます。</p>
             </div>
 
             <!-- 宛先の一覧 -->
@@ -448,12 +450,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=15"></script>
-    <script src="./js/storage.js?v=15"></script>
-    <script src="./js/config-share.js?v=15"></script>
-    <script src="./js/api.js?v=15"></script>
-    <script src="./js/ui.js?v=15"></script>
-    <script src="./js/app.js?v=15"></script>
+    <script src="./js/utils.js?v=16"></script>
+    <script src="./js/storage.js?v=16"></script>
+    <script src="./js/config-share.js?v=16"></script>
+    <script src="./js/api.js?v=16"></script>
+    <script src="./js/ui.js?v=16"></script>
+    <script src="./js/app.js?v=16"></script>
 </body>
 
 </html>

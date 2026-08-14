@@ -490,7 +490,8 @@ function toCareManagerLabel(item, officeMap) {
         reading: name,
         org: office.name,
         address: office.address,
-        suffix: ' 様',
+        // オーナー指示：ケアマネだけ「様」ではなく「ケアマネジャー様」
+        suffix: ' ケアマネジャー様',
         // 報告書の配布先だけを既定で選択状態にする（住所が無い人は画面側で外す）
         checked: isDistribution
     };
