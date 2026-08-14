@@ -7,7 +7,6 @@ let passwordLockUntil = null;
 // 一括入力用のエントリーカウンター
 let treatmentEntryCounter = 0;
 let salesEntryCounter = 0;
-let operationEntryCounter = 0;
 
 // 施術録のチェック項目（並び順がそのまま記録文の語順になる）
 const OPERATION_PARTS = ['頸部', '肩部', '背部', '腰部', '上肢', '下肢'];
@@ -39,9 +38,6 @@ function initScreen(screenId) {
         case 'treatment':
             initTreatmentScreen();
             break;
-        case 'operation':
-            initOperationScreen();
-            break;
         case 'sales':
             initSalesScreen();
             break;
@@ -59,10 +55,6 @@ function initScreen(screenId) {
 function setupHomeScreen() {
     document.getElementById('btn-treatment').addEventListener('click', () => {
         showScreen('treatment');
-    });
-
-    document.getElementById('btn-operation').addEventListener('click', () => {
-        showScreen('operation');
     });
 
     document.getElementById('btn-sales').addEventListener('click', () => {
@@ -163,7 +155,10 @@ function initTreatmentScreen() {
             draft.entries.forEach(entry => {
                 // 患者名もメモも空のものは復元しない（無限増え防止）
                 if (entry.patient || entry.memo) {
-                    addTreatmentEntry(entry.patient, entry.memo);
+                    addTreatmentEntry(entry.patient, entry.memo, '', {
+                        parts: entry.parts,
+                        treatments: entry.treatments
+                    });
                     addedCount++;
                 }
             });
@@ -271,6 +266,12 @@ function addTreatmentEntry(patient, memo, time, options) {
         ? `<div class="entry-hint">${notes.join('<br>')}</div>`
         : '';
 
+    // 部位・施術内容の初期チェック。
+    // 一時保存からの復元ならその状態を、それ以外は患者DBの基本施術を使う。
+    const base = getPatientBaseTreatment(patient || '');
+    const parts = Array.isArray(opts.parts) ? opts.parts : base.parts;
+    const treatments = Array.isArray(opts.treatments) ? opts.treatments : base.treatments;
+
     const entry = document.createElement('div');
     entry.className = 'batch-entry';
     entry.id = entryId;
@@ -282,9 +283,21 @@ function addTreatmentEntry(patient, memo, time, options) {
         <div class="form-group">
             <label>患者 <span class="required">*</span></label>
             ${hintHtml}
-            <select class="form-control entry-patient" onchange="autoSaveTreatmentDraft()">
+            <select class="form-control entry-patient" onchange="onTreatmentPatientChange('${entryId}')">
                 ${createPatientSelectHtml(patient || '')}
             </select>
+        </div>
+        <div class="form-group">
+            <label>部位</label>
+            <div class="check-grid">
+                ${createCheckboxesHtml(OPERATION_PARTS, 'entry-part', parts)}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>施術内容</label>
+            <div class="check-grid">
+                ${createCheckboxesHtml(OPERATION_TREATMENTS, 'entry-treatment', treatments)}
+            </div>
         </div>
         <div class="form-group">
             <label>メモ</label>
@@ -293,6 +306,14 @@ function addTreatmentEntry(patient, memo, time, options) {
     `;
 
     list.appendChild(entry);
+    autoSaveTreatmentDraft();
+}
+
+/**
+ * 患者を選び直したら、その患者の基本施術にチェックを合わせ直す
+ */
+function onTreatmentPatientChange(entryId) {
+    applyPatientBaseTreatmentById(entryId);
     autoSaveTreatmentDraft();
 }
 
@@ -326,18 +347,24 @@ async function saveBatchTreatment() {
         return;
     }
 
-    // バリデーション
+    // バリデーション。
+    // 部位・施術内容は未選択でもエラーにしない（メモだけ残したい日があるため）。
+    // その場合は施術記録シートにだけ保存し、施術録シートには書かない。
     const items = [];
     let hasError = false;
     entryEls.forEach((entry, index) => {
         const patient = entry.querySelector('.entry-patient').value;
         const memo = entry.querySelector('.entry-memo').value;
+        const parts = getCheckedValues(entry, '.entry-part');
+        const treatments = getCheckedValues(entry, '.entry-treatment');
 
         if (!patient) {
             showError(`記録${index + 1}: 患者を選択してください`);
             hasError = true;
             return;
         }
+
+        const timestamp = getTimestamp();
 
         items.push({
             el: entry,
@@ -347,9 +374,20 @@ async function saveBatchTreatment() {
                 patientName: patient,
                 staff,
                 memo,
-                timestamp: getTimestamp(),
+                timestamp,
                 notionSynced: ''
-            }
+            },
+            // 部位と施術内容が両方選ばれているときだけ施術録に残す
+            operationRecord: (parts.length && treatments.length) ? {
+                date,
+                patientId: '',
+                patientName: patient,
+                staff,
+                parts,
+                treatments,
+                note: buildOperationNote(parts, treatments),
+                timestamp
+            } : null
         });
     });
 
@@ -368,6 +406,7 @@ async function saveBatchTreatment() {
         let offlineCount = 0;
         let successCount = 0;
         let failCount = 0;
+        const savedItems = [];
 
         outcomes.forEach((outcome, i) => {
             if (outcome.status === 'fulfilled') {
@@ -376,6 +415,7 @@ async function saveBatchTreatment() {
                 } else {
                     successCount++;
                 }
+                savedItems.push(items[i]);
                 items[i].el.remove();
             } else {
                 failCount++;
@@ -395,6 +435,11 @@ async function saveBatchTreatment() {
             showToast(`${successCount}件を保存しました`, 2000);
         }
 
+        // 施術録シートと患者DBの更新。
+        // 施術記録は既に保存できているので、ここが失敗しても
+        // 保存結果には影響させず、待たずに裏で流す。
+        saveOperationsInBackground(savedItems);
+
         renumberEntries('treatment-batch-list');
 
         // 残っているのは失敗分のみ。空になったら入力枠を1つ用意
@@ -413,6 +458,26 @@ async function saveBatchTreatment() {
         console.error('Batch save failed:', error);
         showError('保存に失敗しました');
     }
+}
+
+/**
+ * 施術記録の保存に成功した分について、施術録シートへの保存と
+ * 患者DBの基本施術の更新をまとめて行う。
+ *
+ * 施術記録（毎日使う本番機能）を守るため、ここでの失敗は
+ * 画面に出さずコンソールに残すだけにする。
+ * 部位・施術内容が未選択の記録は operationRecord が null なので書き込まない。
+ */
+function saveOperationsInBackground(savedItems) {
+    savedItems.forEach(item => {
+        if (!item.operationRecord) return;
+
+        saveOperationRecord(item.operationRecord)
+            .then(() => syncPatientBaseTreatment(item.operationRecord))
+            .catch(error => {
+                console.warn('Save operation record failed:', item.operationRecord.patientName, error);
+            });
+    });
 }
 
 /**
@@ -438,7 +503,9 @@ function autoSaveTreatmentDraft() {
     document.querySelectorAll('#treatment-batch-list .batch-entry').forEach(entry => {
         entries.push({
             patient: entry.querySelector('.entry-patient').value,
-            memo: entry.querySelector('.entry-memo').value
+            memo: entry.querySelector('.entry-memo').value,
+            parts: getCheckedValues(entry, '.entry-part'),
+            treatments: getCheckedValues(entry, '.entry-treatment')
         });
     });
 
@@ -558,42 +625,18 @@ function setupTreatmentScreen() {
     // 共通項目変更時に自動保存
     document.getElementById('treatment-date').addEventListener('change', autoSaveTreatmentDraft);
     document.getElementById('treatment-staff').addEventListener('change', autoSaveTreatmentDraft);
+
+    // 部位・施術内容のチェックも一時保存に含める
+    document.getElementById('treatment-batch-list').addEventListener('change', autoSaveTreatmentDraft);
 }
 
 // =============================================
-// 施術録画面（療養費の保険記録）
+// 施術録の部品（療養費の保険記録）
 //
-// 施術記録（患者の様子のメモ）とは別物。
-// 部位と施術内容のチェックだけを機械的に残す帳票なので、
-// 患者の主観や会話内容はここには入れない。
+// 画面は施術記録入力に統合済み。ここにあるのはその部品。
+// 施術録は部位と施術内容のチェックだけを機械的に残す帳票なので、
+// 患者の主観や会話内容（メモ欄の内容）は一切入れない。
 // =============================================
-
-function initOperationScreen() {
-    // 日付をデフォルト設定
-    document.getElementById('operation-date').value = getToday();
-
-    // 施術者プルダウンを設定
-    populateOperationStaffSelect();
-
-    // エントリーがなければ1つ追加
-    if (document.querySelectorAll('#operation-batch-list .batch-entry').length === 0) {
-        addOperationEntry();
-    }
-}
-
-function populateOperationStaffSelect() {
-    const select = document.getElementById('operation-staff');
-    const staff = getTreatmentStaff();
-
-    select.innerHTML = '<option value="">選択してください</option>';
-
-    staff.forEach(s => {
-        const option = document.createElement('option');
-        option.value = s.name;
-        option.textContent = s.name;
-        select.appendChild(option);
-    });
-}
 
 /**
  * チェックボックス群のHTMLを生成
@@ -634,74 +677,6 @@ function getPatientBaseTreatment(patientName) {
  */
 function sortCheckList(names, order) {
     return order.filter(name => (names || []).indexOf(name) !== -1);
-}
-
-/**
- * 施術録エントリーを追加
- */
-function addOperationEntry(patient, time, options) {
-    const opts = options || {};
-    operationEntryCounter++;
-    const list = document.getElementById('operation-batch-list');
-    const entryId = `operation-entry-${operationEntryCounter}`;
-
-    const numLabel = list.children.length + 1;
-    let headerText = String(numLabel);
-    if (time) {
-        headerText += opts.duration ? ` (${time}〜 ${opts.duration}分)` : ` (${time}〜)`;
-    }
-
-    // 患者リストと一致しなかった場合、元の表記を出して手動で選べるようにする
-    const hintHtml = opts.unmatchedName
-        ? `<div class="entry-hint">予定の記載：${escapeHtml(opts.unmatchedName)}<br>患者リストに一致する名前がありません。選び直してください</div>`
-        : '';
-
-    // 前回までの内容（患者DBの基本施術）をあらかじめチェックしておく。
-    // 毎回同じ内容になるので、そのまま「まとめて保存」できるのが狙い。
-    const base = getPatientBaseTreatment(patient || '');
-
-    const entry = document.createElement('div');
-    entry.className = 'batch-entry';
-    entry.id = entryId;
-    entry.innerHTML = `
-        <div class="batch-entry-header">
-            <span class="batch-entry-number">${headerText}</span>
-            <button type="button" class="btn-remove-entry" onclick="removeOperationEntry('${entryId}')">✕</button>
-        </div>
-        <div class="form-group">
-            <label>患者 <span class="required">*</span></label>
-            ${hintHtml}
-            <select class="form-control entry-patient" onchange="applyPatientBaseTreatmentById('${entryId}')">
-                ${createPatientSelectHtml(patient || '')}
-            </select>
-        </div>
-        <div class="form-group">
-            <label>部位 <span class="required">*</span></label>
-            <div class="check-grid">
-                ${createCheckboxesHtml(OPERATION_PARTS, 'entry-part', base.parts)}
-            </div>
-        </div>
-        <div class="form-group">
-            <label>施術内容 <span class="required">*</span></label>
-            <div class="check-grid">
-                ${createCheckboxesHtml(OPERATION_TREATMENTS, 'entry-treatment', base.treatments)}
-            </div>
-        </div>
-    `;
-
-    list.appendChild(entry);
-    return entry;
-}
-
-/**
- * 施術録エントリーを削除
- */
-function removeOperationEntry(entryId) {
-    const entry = document.getElementById(entryId);
-    if (entry) {
-        entry.remove();
-        renumberEntries('operation-batch-list');
-    }
 }
 
 /**
@@ -782,211 +757,6 @@ function isSameCheckList(a, b) {
  */
 function buildOperationNote(parts, treatments) {
     return `${parts.join('、')}に${treatments.join('、')}を施術`;
-}
-
-/**
- * スケジュールから患者を並べ、前回のチェック状態を復元する
- */
-async function loadScheduleOperation() {
-    const staff = document.getElementById('operation-staff').value;
-    const baseDate = document.getElementById('operation-date').value;
-
-    if (!staff || !baseDate) {
-        showError('日付と施術者を選択してください');
-        return;
-    }
-
-    try {
-        const schedules = await getTreatmentSchedules();
-
-        const dayName = getDayOfWeek(baseDate);
-
-        // 該当のスケジュールを抽出（施術、担当者、曜日一致）
-        const targetSchedules = schedules.filter(s =>
-            s.type === 'treatment' &&
-            s.staff === staff &&
-            s.day === dayName
-        );
-
-        if (targetSchedules.length === 0) {
-            showToast('この日のスケジュールはありません', 3000);
-            return;
-        }
-
-        // 時間順（昇順）にソート
-        targetSchedules.sort((a, b) => a.time.localeCompare(b.time));
-
-        // 既存エントリーが空の1件だけなら削除
-        const existingEntries = document.querySelectorAll('#operation-batch-list .batch-entry');
-        if (existingEntries.length === 1) {
-            const firstPatient = existingEntries[0].querySelector('.entry-patient').value;
-            if (!firstPatient) {
-                existingEntries[0].remove();
-            }
-        }
-
-        // 1マスに複数人が入っている場合は分けて追加する。
-        // チェックの既定値は患者キャッシュから入るので、ここでの通信は発生しない。
-        let addedCount = 0;
-        let unmatchedCount = 0;
-
-        targetSchedules.forEach(item => {
-            splitScheduleNames(item.name).forEach(rawName => {
-                const matched = findPatientByName(rawName);
-                if (!matched) unmatchedCount++;
-                addOperationEntry(matched, item.time, {
-                    unmatchedName: matched ? '' : rawName,
-                    duration: item.duration
-                });
-                addedCount++;
-            });
-        });
-
-        if (unmatchedCount > 0) {
-            showToast(`${addedCount}件追加（うち${unmatchedCount}件は患者を選び直してください）`, 4000);
-        } else {
-            showToast(`${addedCount}件のスケジュールを追加しました`, 2000);
-        }
-    } catch (error) {
-        hideLoading();
-        console.error('Load schedule failed:', error);
-        showError('スケジュールの取得に失敗しました');
-    }
-}
-
-/**
- * 施術録を一括保存
- */
-async function saveBatchOperation() {
-    const date = document.getElementById('operation-date').value;
-    const staff = document.getElementById('operation-staff').value;
-
-    if (!date || !staff) {
-        showError('日付と施術者を選択してください');
-        return;
-    }
-
-    const entryEls = Array.from(document.querySelectorAll('#operation-batch-list .batch-entry'));
-    if (entryEls.length === 0) {
-        showError('記録を追加してください');
-        return;
-    }
-
-    // バリデーション
-    const items = [];
-    let hasError = false;
-    entryEls.forEach((entry, index) => {
-        const patient = entry.querySelector('.entry-patient').value;
-        const parts = getCheckedValues(entry, '.entry-part');
-        const treatments = getCheckedValues(entry, '.entry-treatment');
-
-        if (!patient) {
-            showError(`記録${index + 1}: 患者を選択してください`);
-            hasError = true;
-            return;
-        }
-
-        if (parts.length === 0 || treatments.length === 0) {
-            showError(`${patient}さん: 部位と施術内容を1つ以上選んでください`);
-            hasError = true;
-            return;
-        }
-
-        items.push({
-            el: entry,
-            record: {
-                date,
-                patientId: '',
-                patientName: patient,
-                staff,
-                parts,
-                treatments,
-                note: buildOperationNote(parts, treatments),
-                timestamp: getTimestamp()
-            }
-        });
-    });
-
-    if (hasError) return;
-
-    try {
-        showLoading(`${items.length}件を保存中...`);
-
-        // 個別に送信し、失敗した記録だけを画面に残す
-        // （成功済みの記録が再送信で二重登録されるのを防ぐため）
-        const outcomes = await Promise.allSettled(
-            items.map(item => saveOperationRecord(item.record))
-        );
-
-        let offlineCount = 0;
-        let successCount = 0;
-        let failCount = 0;
-
-        const saved = [];
-
-        outcomes.forEach((outcome, i) => {
-            if (outcome.status === 'fulfilled') {
-                if (outcome.value.offline) {
-                    offlineCount++;
-                } else {
-                    successCount++;
-                }
-                saved.push(items[i].record);
-                items[i].el.remove();
-            } else {
-                failCount++;
-                console.error('Save failed for entry', items[i].record, outcome.reason);
-            }
-        });
-
-        hideLoading();
-
-        if (failCount > 0) {
-            showError(`${failCount}件の保存に失敗しました。内容を確認して「まとめて保存」を再度押してください`);
-        }
-
-        if (offlineCount > 0) {
-            showToast(`${offlineCount}件を一時保存しました（電波の良い場所で自動送信されます）`, 3500);
-        } else if (successCount > 0 && failCount === 0) {
-            showToast(`${successCount}件を保存しました`, 2000);
-        }
-
-        // 次回の既定値の更新。保存結果には影響させないので待たない
-        Promise.allSettled(saved.map(record => syncPatientBaseTreatment(record)));
-
-        renumberEntries('operation-batch-list');
-
-        // 残っているのは失敗分のみ。空になったら入力枠を1つ用意
-        if (document.querySelectorAll('#operation-batch-list .batch-entry').length === 0) {
-            addOperationEntry();
-        }
-
-    } catch (error) {
-        hideLoading();
-        console.error('Batch save failed:', error);
-        showError('保存に失敗しました');
-    }
-}
-
-/**
- * 施術録をクリア
- */
-function clearOperationBatch() {
-    if (window.confirm('入力中のデータを削除しますか？')) {
-        document.getElementById('operation-batch-list').innerHTML = '';
-        operationEntryCounter = 0;
-        addOperationEntry();
-    }
-}
-
-function setupOperationScreen() {
-    document.getElementById('btn-add-operation-entry').addEventListener('click', () => addOperationEntry());
-    document.getElementById('btn-save-batch-operation').addEventListener('click', saveBatchOperation);
-    document.getElementById('btn-clear-operation').addEventListener('click', clearOperationBatch);
-    document.getElementById('btn-load-schedule-operation').addEventListener('click', loadScheduleOperation);
-    document.getElementById('btn-back-operation').addEventListener('click', () => {
-        showScreen('home');
-    });
 }
 
 // =============================================
@@ -1797,7 +1567,6 @@ function setupSettingsScreen() {
 function initUI() {
     setupHomeScreen();
     setupTreatmentScreen();
-    setupOperationScreen();
     setupSalesScreen();
     setupViewScreen();
     setupSettingsScreen();
