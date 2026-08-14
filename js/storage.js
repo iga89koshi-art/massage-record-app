@@ -17,7 +17,8 @@ const STORAGE_KEYS = {
     SALES_DRAFT: 'sales_draft',
     SCHEDULES: 'basic_schedules',
     VISIT_PLANS: 'visit_plans',
-    SCHEDULE_STAFF: 'schedule_staff'
+    SCHEDULE_STAFF: 'schedule_staff',
+    LABEL_TARGETS: 'label_targets'
 };
 
 /**
@@ -139,6 +140,27 @@ function saveScheduleStaff(name) {
 
 function getScheduleStaff() {
     return getFromStorage(STORAGE_KEYS.SCHEDULE_STAFF, '');
+}
+
+// === 宛名ラベルの宛先 ===
+
+/**
+ * 宛先1件の形：
+ * { id, kind: doctor|careManager|patient, name, reading, org, address, suffix, checked }
+ * 医師・ケアマネ・患者をまとめて1つのキーに入れる。
+ * checked も一緒に残るので、前回選んだ宛先が次に開いた時も入ったままになる。
+ */
+function saveLabelTargets(targets) {
+    return saveToStorage(STORAGE_KEYS.LABEL_TARGETS, targets);
+}
+
+function getLabelTargets() {
+    const saved = getFromStorage(STORAGE_KEYS.LABEL_TARGETS, null) || {};
+    return {
+        doctor: saved.doctor || [],
+        careManager: saved.careManager || [],
+        patient: saved.patient || []
+    };
 }
 
 // === パスワード ===
@@ -301,5 +323,6 @@ function clearCache() {
     removeFromStorage(STORAGE_KEYS.STAFF);
     removeFromStorage(STORAGE_KEYS.SCHEDULES);
     removeFromStorage(STORAGE_KEYS.VISIT_PLANS);
+    removeFromStorage(STORAGE_KEYS.LABEL_TARGETS);
     showToast('キャッシュをクリアしました');
 }

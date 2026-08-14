@@ -382,6 +382,179 @@ async function fetchPatientsFromNotion() {
     throw new Error('患者データの取得に失敗しました');
 }
 
+// === 宛名ラベル（医師一覧DB / 担当者DB / 営業先事業所DB / 患者DB） ===
+
+// 院で固定のデータベース。設定画面には出さない。
+// 患者DBだけは設定画面で入れたものを優先する（既存の患者取得と同じDBのため）。
+const LABEL_DOCTOR_DB_ID = 'f02e086e-831e-4fdf-9772-2fa7a8c77ed1';
+const LABEL_CARE_MANAGER_DB_ID = '2f30b49b-5f34-802a-880f-000b21f593a5';
+const LABEL_OFFICE_DB_ID = 'c3d24b81-0c47-4772-b698-59b6564bded5';
+const LABEL_PATIENT_DB_ID = '2f30b49b-5f34-80c5-9d1c-000b583ba076';
+
+/**
+ * Notionのプロパティ1つを文字列にする（title / rich_text / select / 電話番号）
+ */
+function propText(prop) {
+    if (!prop) return '';
+    if (prop.title) return plainText(prop.title);
+    if (prop.rich_text) return plainText(prop.rich_text);
+    if (prop.select) return prop.select.name || '';
+    if (prop.phone_number) return String(prop.phone_number);
+    return '';
+}
+
+/**
+ * データベースの中身をそのまま取ってくる（既存の proxyNotionPatients を使い回す）
+ */
+async function fetchNotionRows(dbId) {
+    const apiKey = getNotionApiKey();
+
+    // APIキーはサーバー側（スクリプトプロパティ NOTION_API_KEY）にあれば空でよい。
+    if (!dbId) {
+        throw new Error('データベースIDが指定されていません');
+    }
+
+    const result = await callApiWithRetry(() =>
+        callGasApi('proxyNotionPatients', { apiKey, dbId })
+    );
+
+    if (!result.success || !result.data) {
+        throw new Error('Notionからの取得に失敗しました');
+    }
+
+    return result.data;
+}
+
+/**
+ * 医師1件を宛名1件に変換する。宛名の敬称は院の慣習で「先生 御侍史」。
+ */
+function toDoctorLabel(item) {
+    const props = item.properties || {};
+    const name = propText(props['医師名']);
+    if (!name) return null;
+
+    const reading = propText(props['フリガナ']) || name;
+
+    return {
+        id: item.id,
+        kind: 'doctor',
+        name: name,
+        reading: reading,
+        org: propText(props['医療機関名']),
+        address: propText(props['住所']),
+        suffix: ' 先生 御侍史',
+        checked: false
+    };
+}
+
+/**
+ * 営業先事業所DBから「ページID → 事業所名・住所」の対応表を作る。
+ * ケアマネの住所は担当者DBに無く、この事業所側にあるため突き合わせに使う。
+ */
+function toOfficeMap(items) {
+    const map = {};
+    items.forEach(item => {
+        const props = item.properties || {};
+        map[normalizeNotionId(item.id)] = {
+            name: propText(props['事業所名']),
+            address: propText(props['住所'])
+        };
+    });
+    return map;
+}
+
+/**
+ * ケアマネ1件を宛名1件に変換する。
+ * 「在籍」以外（退職など）は宛先にしないので null を返す。
+ */
+function toCareManagerLabel(item, officeMap) {
+    const props = item.properties || {};
+    const name = propText(props['名前']);
+    if (!name) return null;
+
+    // 在籍状況が空の行もあるため、はっきり「在籍」以外と分かる場合だけ落とす
+    const status = propText(props['在籍状況']);
+    if (status && status !== '在籍') return null;
+
+    const relations = (props['所属事業所'] && props['所属事業所'].relation) || [];
+    const office = relations
+        .map(r => officeMap[normalizeNotionId(r.id)])
+        .filter(Boolean)[0] || { name: '', address: '' };
+
+    const isDistribution = !!(props['報告書の配布先'] && props['報告書の配布先'].checkbox);
+
+    return {
+        id: item.id,
+        kind: 'careManager',
+        name: name,
+        reading: name,
+        org: office.name,
+        address: office.address,
+        suffix: ' 様',
+        // 報告書の配布先だけを既定で選択状態にする（住所が無い人は画面側で外す）
+        checked: isDistribution
+    };
+}
+
+/**
+ * 患者1件を宛名1件に変換する
+ */
+function toPatientLabel(item) {
+    const props = item.properties || {};
+    const name = propText(props['患者名']);
+    if (!name) return null;
+
+    return {
+        id: item.id,
+        kind: 'patient',
+        name: name,
+        reading: propText(props['フリガナ']) || name,
+        org: '',
+        address: propText(props['住所']),
+        suffix: ' 様',
+        checked: false
+    };
+}
+
+/**
+ * 宛名ラベルの宛先を3種類まとめて取得する。
+ * 医師・患者は住所のある人だけ、ケアマネは住所が無い人も
+ * 「住所未登録」として出す（誰が抜けているか気付けるようにするため）。
+ */
+async function fetchLabelTargetsFromNotion() {
+    const patientDbId = getNotionPatientDb() || LABEL_PATIENT_DB_ID;
+
+    const [doctorRows, careRows, officeRows, patientRows] = await Promise.all([
+        fetchNotionRows(LABEL_DOCTOR_DB_ID),
+        fetchNotionRows(LABEL_CARE_MANAGER_DB_ID),
+        fetchNotionRows(LABEL_OFFICE_DB_ID),
+        fetchNotionRows(patientDbId)
+    ]);
+
+    const officeMap = toOfficeMap(officeRows);
+
+    const doctors = doctorRows
+        .map(toDoctorLabel)
+        .filter(target => target && target.address);
+
+    const careManagers = careRows
+        .map(item => toCareManagerLabel(item, officeMap))
+        .filter(Boolean);
+
+    const patients = patientRows
+        .map(toPatientLabel)
+        .filter(target => target && target.address);
+
+    const targets = {
+        doctor: sortJapanese(doctors, 'reading'),
+        careManager: sortJapanese(careManagers, 'reading'),
+        patient: sortJapanese(patients, 'reading')
+    };
+
+    saveLabelTargets(targets);
+    return targets;
+}
+
 // === 接続テスト ===
 
 async function testGasConnection(apiUrl) {

@@ -44,6 +44,9 @@ function initScreen(screenId) {
         case 'schedule-view':
             initScheduleScreen();
             break;
+        case 'label-print':
+            initLabelScreen();
+            break;
         case 'view':
             initViewScreen();
             break;
@@ -62,6 +65,10 @@ function setupHomeScreen() {
 
     document.getElementById('btn-schedule').addEventListener('click', () => {
         showScreen('schedule-view');
+    });
+
+    document.getElementById('btn-labels').addEventListener('click', () => {
+        showScreen('label-print');
     });
 
     document.getElementById('btn-sales').addEventListener('click', () => {
@@ -1459,6 +1466,278 @@ function setupScheduleScreen() {
 }
 
 // =============================================
+// 宛名ラベル印刷画面
+// =============================================
+
+// タブの並び。オーナー指示で医師・ケアマネを先に、患者を最後にする
+const LABEL_TABS = [
+    { key: 'doctor', label: '医師' },
+    { key: 'careManager', label: 'ケアマネ' },
+    { key: 'patient', label: '患者' }
+];
+
+// A-one 72424（A4・24面・3列×8段）の1枚あたりの面数
+const LABELS_PER_SHEET = 24;
+
+let labelTab = 'doctor';
+let labelTargets = { doctor: [], careManager: [], patient: [] };
+// 取得を試したかどうか（キャッシュが空でも取得は1回だけにする）
+let labelFetchTried = false;
+
+/**
+ * 住所を「〒343-0817」と「埼玉県越谷市…」の2行に分ける。
+ * 住所は郵便番号込みの1つのテキストで入っているため、郵便番号の後ろで切る。
+ * 郵便番号が入っていない住所はそのまま1行で返す。
+ */
+function splitAddressLines(address) {
+    const text = String(address == null ? '' : address).replace(/\s+/g, ' ').trim();
+    if (!text) return { postal: '', rest: '' };
+
+    // 〒があればハイフン無し（〒3430845）でも拾う。
+    // 〒が無い住所は、頭が「343-0817 …」の形のときだけ郵便番号とみなす
+    // （番地の「10-22」を郵便番号と誤認しないよう先頭に限定する）
+    const match = text.match(/〒\s*(\d{3})\s*-?\s*(\d{4})\s*(.*)$/)
+        || text.match(/^(\d{3})\s*-\s*(\d{4})\s*(.*)$/);
+    if (!match) return { postal: '', rest: text };
+
+    return {
+        postal: `〒${match[1]}-${match[2]}`,
+        rest: match[3].trim()
+    };
+}
+
+function initLabelScreen() {
+    labelTab = 'doctor';
+    labelTargets = getLabelTargets();
+
+    // まずキャッシュで描く（待たせない）
+    renderLabelScreen();
+
+    // キャッシュが空のときだけ取りに行く
+    if (getLabelTabTargets('doctor').length === 0) {
+        loadLabelTargetsIfEmpty();
+    }
+}
+
+function getLabelTabTargets(tab) {
+    return labelTargets[tab] || [];
+}
+
+/**
+ * キャッシュが空の場合の初回取得。何度も叩かないよう1回だけ試す。
+ */
+async function loadLabelTargetsIfEmpty() {
+    if (labelFetchTried) return;
+    labelFetchTried = true;
+
+    try {
+        showLoading('宛先を取得中...');
+        labelTargets = await fetchLabelTargetsFromNotion();
+        renderLabelScreen();
+    } catch (error) {
+        console.error('Load label targets failed:', error);
+        showError('宛先の取得に失敗しました');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Notionから取り直して描き直す（「最新に更新」）
+ */
+async function refreshLabelTargets() {
+    try {
+        showLoading('宛先を取得中...');
+        labelTargets = await fetchLabelTargetsFromNotion();
+        hideLoading();
+        renderLabelScreen();
+        showToast(`宛先を${getLabelTabTargets(labelTab).length}件読み込みました`);
+    } catch (error) {
+        hideLoading();
+        console.error('Refresh label targets failed:', error);
+        showError('宛先の取得に失敗しました');
+    }
+}
+
+/**
+ * 画面全体を描き直す（タブ・チェックのどれが変わってもここを通す）
+ */
+function renderLabelScreen() {
+    document.querySelectorAll('#label-print .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`tab-label-${labelTab}`).classList.add('active');
+
+    renderLabelList();
+    renderLabelSummary();
+    renderLabelSheet();
+}
+
+/**
+ * 宛先の一覧（チェックボックス付き）。住所が無い人は選べないようにする。
+ */
+function renderLabelList() {
+    const targets = getLabelTabTargets(labelTab);
+    const list = document.getElementById('label-list');
+
+    if (targets.length === 0) {
+        list.innerHTML = '<div class="label-empty">宛先がありません。「最新に更新」を押してください</div>';
+        return;
+    }
+
+    list.innerHTML = targets.map((target, index) => {
+        const hasAddress = !!target.address;
+        const note = hasAddress
+            ? escapeHtml([target.org, target.address].filter(Boolean).join('　'))
+            : '住所未登録';
+        const noteClass = hasAddress ? 'label-item-note' : 'label-item-note is-missing';
+
+        return `<label class="label-item${hasAddress ? '' : ' is-disabled'}">
+                    <input type="checkbox" ${hasAddress && target.checked ? 'checked' : ''}
+                        ${hasAddress ? '' : 'disabled'}
+                        onchange="toggleLabelTarget(${index}, this.checked)">
+                    <span class="label-item-body">
+                        <span class="label-item-name">${escapeHtml(target.name)}</span>
+                        <span class="${noteClass}">${note}</span>
+                    </span>
+                </label>`;
+    }).join('');
+}
+
+/**
+ * 選択件数と必要シート数（24面で1枚）
+ */
+function renderLabelSummary() {
+    const count = getSelectedLabelTargets().length;
+    const sheets = Math.ceil(count / LABELS_PER_SHEET);
+
+    document.getElementById('label-summary').textContent =
+        `選択 ${count}件 / 必要シート数 ${sheets}枚`;
+}
+
+/**
+ * 選択中の宛先。住所が無い人は選べないが、念のためここでも外す。
+ */
+function getSelectedLabelTargets() {
+    return getLabelTabTargets(labelTab).filter(target => target.checked && target.address);
+}
+
+/**
+ * 印刷される中身そのものを組む。画面ではこれを縮小プレビューとして見せ、
+ * 印刷時は @media print でmm指定のラベル面付けに切り替わる。
+ */
+function renderLabelSheet() {
+    const targets = getSelectedLabelTargets();
+    const sheet = document.getElementById('label-sheet');
+
+    if (targets.length === 0) {
+        sheet.innerHTML = '<div class="label-empty">宛先を選ぶとここに並びます</div>';
+        return;
+    }
+
+    // 24面ごとに1ページ。9件目からは自動で次ページに送られる
+    const pages = [];
+    for (let i = 0; i < targets.length; i += LABELS_PER_SHEET) {
+        const cells = targets.slice(i, i + LABELS_PER_SHEET)
+            .map(buildLabelCellHtml)
+            .join('');
+        pages.push(`<div class="label-page"><div class="label-grid">${cells}</div></div>`);
+    }
+
+    sheet.innerHTML = pages.join('');
+}
+
+/**
+ * ラベル1片の中身。名前の行だけ大きくする（医師は「先生 御侍史」付き）。
+ */
+function buildLabelCellHtml(target) {
+    const address = splitAddressLines(target.address);
+
+    const addressLines = [];
+    if (address.postal) {
+        addressLines.push(`<span class="label-address-line">${escapeHtml(address.postal)}</span>`);
+    }
+    if (address.rest) {
+        addressLines.push(`<span class="label-address-line">${escapeHtml(address.rest)}</span>`);
+    }
+
+    const org = target.org
+        ? `<div class="label-org">${escapeHtml(target.org)}</div>`
+        : '';
+
+    return `<div class="label-cell">
+                <div class="label-address">${addressLines.join('')}</div>
+                ${org}
+                <div class="label-name">　${escapeHtml(target.name)}${escapeHtml(target.suffix || ' 様')}</div>
+            </div>`;
+}
+
+function toggleLabelTarget(index, checked) {
+    const target = getLabelTabTargets(labelTab)[index];
+    if (!target) return;
+
+    target.checked = checked;
+    saveLabelTargets(labelTargets);
+
+    // 一覧は触らずに済むので、件数とプレビューだけ描き直す
+    renderLabelSummary();
+    renderLabelSheet();
+}
+
+/**
+ * 全選択 / 全解除（住所が無い人は選択対象にしない）
+ */
+function setAllLabelChecks(checked) {
+    getLabelTabTargets(labelTab).forEach(target => {
+        target.checked = checked && !!target.address;
+    });
+    saveLabelTargets(labelTargets);
+    renderLabelScreen();
+}
+
+function showLabelTab(tab) {
+    labelTab = tab;
+    renderLabelScreen();
+}
+
+/**
+ * 位置合わせ用の枠線。試し刷りのときだけ枠を出して紙とのズレを見る。
+ */
+function toggleLabelFrame() {
+    const sheet = document.getElementById('label-sheet');
+    const on = sheet.classList.toggle('is-debug');
+    showToast(on ? '枠線ありで印刷します' : '枠線なしで印刷します');
+}
+
+function printLabels() {
+    const targets = getSelectedLabelTargets();
+
+    if (targets.length === 0) {
+        showError('印刷する宛先を選んでください');
+        return;
+    }
+
+    renderLabelSheet();
+    window.print();
+}
+
+function setupLabelScreen() {
+    LABEL_TABS.forEach(tab => {
+        document.getElementById(`tab-label-${tab.key}`)
+            .addEventListener('click', () => showLabelTab(tab.key));
+    });
+
+    document.getElementById('btn-label-select-all').addEventListener('click', () => setAllLabelChecks(true));
+    document.getElementById('btn-label-clear-all').addEventListener('click', () => setAllLabelChecks(false));
+    document.getElementById('btn-label-frame').addEventListener('click', toggleLabelFrame);
+    document.getElementById('btn-label-print').addEventListener('click', printLabels);
+    document.getElementById('btn-refresh-labels').addEventListener('click', refreshLabelTargets);
+    document.getElementById('btn-back-label').addEventListener('click', () => {
+        showScreen('home');
+    });
+}
+
+// =============================================
 // 記録閲覧画面
 // =============================================
 
@@ -1916,6 +2195,7 @@ function initUI() {
     setupHomeScreen();
     setupTreatmentScreen();
     setupScheduleScreen();
+    setupLabelScreen();
     setupSalesScreen();
     setupViewScreen();
     setupSettingsScreen();

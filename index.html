@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=13">
+    <link rel="stylesheet" href="./styles/main.css?v=14">
 </head>
 
 <body>
@@ -43,6 +43,10 @@
                 <button id="btn-schedule" class="menu-btn accent">
                     <span class="icon">📅</span>
                     <span class="label">訪問スケジュール</span>
+                </button>
+                <button id="btn-labels" class="menu-btn print">
+                    <span class="icon">✉️</span>
+                    <span class="label">宛名ラベル</span>
                 </button>
                 <button id="btn-sales" class="menu-btn secondary">
                     <span class="icon">📞</span>
@@ -275,6 +279,50 @@
         </div>
     </div>
 
+    <!-- 宛名ラベル印刷画面 -->
+    <div id="label-print" class="screen">
+        <div class="container">
+            <header class="screen-header">
+                <h2>✉️ 宛名ラベル</h2>
+            </header>
+
+            <!-- 宛先の種類と選択操作 -->
+            <div class="label-controls">
+                <div class="tabs label-tabs">
+                    <button type="button" id="tab-label-doctor" class="tab-btn active">医師</button>
+                    <button type="button" id="tab-label-careManager" class="tab-btn">ケアマネ</button>
+                    <button type="button" id="tab-label-patient" class="tab-btn">患者</button>
+                </div>
+                <div class="button-group-inline">
+                    <button type="button" id="btn-label-select-all" class="btn btn-info">全選択</button>
+                    <button type="button" id="btn-label-clear-all" class="btn btn-info">全解除</button>
+                </div>
+                <div id="label-summary" class="label-summary"></div>
+            </div>
+
+            <!-- 宛先の一覧 -->
+            <div id="label-list" class="label-list">
+                <!-- 動的に追加される -->
+            </div>
+
+            <!-- 印刷プレビュー（印刷されるのはここだけ） -->
+            <h3 class="label-preview-title">印刷プレビュー（A-one 72424 / 24面）</h3>
+            <p class="section-note">枠線は画面だけのものです。位置がズレたら「枠線を印刷」で試し刷りして確かめてください。</p>
+            <div id="label-sheet" class="label-sheet">
+                <!-- 動的に追加される -->
+            </div>
+
+            <div class="button-group">
+                <button type="button" id="btn-label-print" class="btn btn-primary">印刷する</button>
+                <button type="button" id="btn-label-frame" class="btn btn-info">枠線を印刷</button>
+            </div>
+            <div class="button-group">
+                <button type="button" id="btn-refresh-labels" class="btn btn-info">最新に更新</button>
+                <button type="button" id="btn-back-label" class="btn btn-secondary">戻る</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 設定画面 -->
     <div id="settings" class="screen">
         <div class="container">
@@ -389,12 +437,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=13"></script>
-    <script src="./js/storage.js?v=13"></script>
-    <script src="./js/config-share.js?v=13"></script>
-    <script src="./js/api.js?v=13"></script>
-    <script src="./js/ui.js?v=13"></script>
-    <script src="./js/app.js?v=13"></script>
+    <script src="./js/utils.js?v=14"></script>
+    <script src="./js/storage.js?v=14"></script>
+    <script src="./js/config-share.js?v=14"></script>
+    <script src="./js/api.js?v=14"></script>
+    <script src="./js/ui.js?v=14"></script>
+    <script src="./js/app.js?v=14"></script>
 </body>
 
 </html>
