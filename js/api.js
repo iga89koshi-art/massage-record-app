@@ -466,13 +466,9 @@ async function saveInstructionToGas(instruction) {
     return result;
 }
 
-async function completeInstructionInGas(id, staff, closeAll) {
+async function completeInstructionInGas(id, staff) {
     const result = await callApiWithRetry(() =>
-        callGasApi('completeInstruction', {
-            id: id,
-            staff: staff || '',
-            closeAll: !!closeAll   // 全員宛てを閉じるのはオーナーだけ
-        }), 2
+        callGasApi('completeInstruction', { id: id, staff: staff || '' }), 2
     );
 
     if (!result.success) {

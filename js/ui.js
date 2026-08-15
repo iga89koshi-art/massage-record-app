@@ -2548,7 +2548,8 @@ function setupPatientInfoScreen() {
 // 通知はしない（オーナーが見に行く形）。
 // =============================================
 
-// 宛先の「全員」。code.gs 側の INSTRUCTION_ALL_TARGET と同じ文字列にすること。
+// 「@全員」はここで施術者全員に展開する。シートには1人1行で入るので、
+// 受け取る側には自分宛ての行しか渡らない。
 const INSTRUCTION_ALL_TARGET = '全員';
 const INSTRUCTION_DONE = '完了';
 
@@ -2571,30 +2572,38 @@ function sortInstructions(list) {
 }
 
 /**
- * 完了者は「長谷川, 小幡」のように複数名が入る。古いキャッシュは1名分の文字列なので両方受ける。
+ * 「@長谷川 @小幡 同意書を…」から、宛先の名前と、@を取り除いた本文に分ける。
+ * @全員 は施術者全員に展開する。知らない名前は宛先にせず、本文に残す。
  */
-function getInstructionDoneBy(item) {
-    if (!item) return [];
-    if (Array.isArray(item.doneByList)) return item.doneByList;
+function parseInstructionMentions(text, knownNames) {
+    const names = knownNames || [];
+    const targets = [];
 
-    return String(item.doneBy || '')
-        .split(',')
-        .map(name => name.trim())
-        .filter(Boolean);
+    const body = String(text || '').replace(/@([^\s@]+)/g, (matched, name) => {
+        if (name === INSTRUCTION_ALL_TARGET) {
+            names.forEach(n => { if (targets.indexOf(n) === -1) targets.push(n); });
+            return '';
+        }
+        if (names.indexOf(name) !== -1) {
+            if (targets.indexOf(name) === -1) targets.push(name);
+            return '';
+        }
+        return matched;   // 施術者に居ない名前は宛先にしない
+    });
+
+    return { targets: targets, content: body.replace(/\s+/g, ' ').trim() };
 }
 
 /**
- * この端末で受け取るべき未完了の指示（自分宛て＋全員宛て）
+ * この端末で受け取るべき未完了の指示。1人1行なので自分宛てだけを見る
  */
 function getMyPendingInstructions() {
     const me = getStaffName();
+    if (!me) return [];
 
-    return sortInstructions(getInstructionsCache().filter(item => {
-        if (!item || item.status === INSTRUCTION_DONE) return false;
-        // 全員宛ては1行を全員で共有している。自分がチェック済みかは完了者欄で見る
-        if (me && getInstructionDoneBy(item).indexOf(me) !== -1) return false;
-        return item.target === INSTRUCTION_ALL_TARGET || (me && item.target === me);
-    }));
+    return sortInstructions(getInstructionsCache().filter(item =>
+        item && item.status !== INSTRUCTION_DONE && item.target === me
+    ));
 }
 
 /**
@@ -2680,18 +2689,13 @@ async function completeInstructionCard(id) {
         await completeInstructionInGas(id, getStaffName());
         hideLoading();
 
-        // 書き込めたらキャッシュ側も直して、通信を待たずに自分の画面から消す。
-        // 全員宛ては他の人の分が残るので、状態ではなく完了者に自分を足す
+        // 書き込めたらキャッシュ側も直して、通信を待たずに自分の画面から消す
         const me = getStaffName();
         const list = getInstructionsCache().map(item => {
-            if (item && item.id === id) {
-                const doneBy = getInstructionDoneBy(item);
-                if (me && doneBy.indexOf(me) === -1) doneBy.push(me);
-
-                item.doneByList = doneBy;
-                item.doneBy = doneBy.join(', ');
+            if (item && item.id === id && item.target === me) {
+                item.status = INSTRUCTION_DONE;
+                item.doneBy = me;
                 item.doneAt = getToday();
-                if (item.target !== INSTRUCTION_ALL_TARGET) item.status = INSTRUCTION_DONE;
             }
             return item;
         });
@@ -2709,73 +2713,95 @@ async function completeInstructionCard(id) {
 // === 指示画面（オーナー用） ===
 
 function initInstructionsScreen() {
-    populateInstructionTargets();
+    renderInstructionMentions();
     renderInstructionList();
     refreshInstructions();
 }
 
 /**
- * 宛先の候補。「全員」＋担当者マスタ・訪問予定に出てくる施術者。
+ * 宛先はスマホで打つと面倒なので、名前を押すと本文の先頭に @名前 が入るようにする。
  */
-function populateInstructionTargets() {
-    const select = document.getElementById('instruction-target');
-    if (!select) return;
+function renderInstructionMentions() {
+    const box = document.getElementById('instruction-mentions');
+    if (!box) return;
 
-    const previous = select.value;
-    const names = getTreatmentStaffNamesForConfig();
+    const names = [INSTRUCTION_ALL_TARGET].concat(getTreatmentStaffNamesForConfig());
 
-    select.innerHTML = `<option value="${INSTRUCTION_ALL_TARGET}">${INSTRUCTION_ALL_TARGET}</option>` +
-        names.map(name => {
-            const label = escapeHtml(name);
-            return `<option value="${label}">${label}</option>`;
-        }).join('');
+    box.innerHTML = names.map(name =>
+        `<button type="button" class="instruction-mention"
+            onclick="insertInstructionMention('${escapeHtml(name)}')">@${escapeHtml(name)}</button>`
+    ).join('');
+}
 
-    if (previous) select.value = previous;
+function insertInstructionMention(name) {
+    const box = document.getElementById('instruction-content');
+    if (!box || !name) return;
+
+    const mention = `@${name}`;
+    if (box.value.indexOf(mention) === -1) {
+        box.value = box.value ? `${mention} ${box.value}` : `${mention} `;
+    }
+    box.focus();
+}
+
+/**
+ * 同じIDの行（＝同じ指示を複数人に送ったもの）を1つにまとめる。
+ * 並び順は未完了が先、その中では期限が近い順。
+ */
+function groupInstructionsById(list) {
+    const order = [];
+    const byId = {};
+
+    sortInstructions(list).forEach(item => {
+        if (!item || !item.id) return;
+        if (!byId[item.id]) {
+            byId[item.id] = { id: item.id, rows: [] };
+            order.push(item.id);
+        }
+        byId[item.id].rows.push(item);
+    });
+
+    return order.map(id => byId[id]);
 }
 
 function renderInstructionList() {
     const list = document.getElementById('instruction-list');
     if (!list) return;
 
-    const items = sortInstructions(getInstructionsCache());
+    // 複数人に送った指示は同じIDの行が人数ぶんある。1枚のカードにまとめて出す
+    const groups = groupInstructionsById(getInstructionsCache());
 
-    if (items.length === 0) {
+    if (groups.length === 0) {
         list.innerHTML = '<div class="schedule-empty">まだ指示はありません</div>';
         return;
     }
 
-    list.innerHTML = items.map(item => {
-        const done = item.status === INSTRUCTION_DONE;
+    list.innerHTML = groups.map(group => {
+        const done = group.rows.every(row => row.status === INSTRUCTION_DONE);
         const doneClass = done ? ' is-done' : '';
+        const head = group.rows[0];
 
-        const meta = [`宛先：${item.target || '-'}`];
-        if (item.due) meta.push(formatInstructionDue(item.due));
-        if (item.createdAt) meta.push(`作成 ${item.createdAt}`);
+        const meta = [];
+        if (head.due) meta.push(formatInstructionDue(head.due));
+        if (head.createdAt) meta.push(`作成 ${head.createdAt}`);
 
-        // 誰がチェックしたかを全員分出す。全員宛ては何人が済んだかが知りたいところ
-        const doneBy = getInstructionDoneBy(item);
-        let statusText;
-        if (done) {
-            statusText = `✓ 完了${doneBy.length ? `（${doneBy.join('・')}）` : ''}${item.doneAt ? ` ${item.doneAt}` : ''}`;
-        } else if (doneBy.length) {
-            statusText = `${doneBy.length}名済み（${doneBy.join('・')}）`;
-        } else {
-            statusText = '未完了';
-        }
+        // 誰が済んで誰が残っているかを名前ごとに出す
+        const chips = group.rows.map(row => {
+            const rowDone = row.status === INSTRUCTION_DONE;
+            return `<span class="instruction-person${rowDone ? ' is-done' : ''}">${
+                escapeHtml(row.target)}${rowDone ? ' ✓' : ''}</span>`;
+        }).join('');
 
-        // 全員宛ては全員がチェックしても自動では閉じないので、オーナーが閉じられるようにする
-        const closeHtml = (!done && item.target === INSTRUCTION_ALL_TARGET)
-            ? `<button type="button" class="btn btn-secondary instruction-close-btn"
-                    onclick="closeInstruction('${escapeHtml(item.id)}')">閉じる</button>`
-            : '';
+        const doneCount = group.rows.filter(row => row.status === INSTRUCTION_DONE).length;
+        const statusText = `${doneCount}/${group.rows.length} 完了`;
 
         return `<div class="instruction-card${doneClass}">
                     <div class="instruction-card-body">
-                        <span class="instruction-content">${escapeHtml(item.content)}</span>
-                        <span class="instruction-meta">${escapeHtml(meta.join('　'))}</span>
+                        <span class="instruction-content">${escapeHtml(head.content)}</span>
+                        <span class="instruction-people">${chips}</span>
+                        ${meta.length ? `<span class="instruction-meta">${escapeHtml(meta.join('　'))}</span>` : ''}
                     </div>
                     <span class="instruction-status${doneClass}">${escapeHtml(statusText)}</span>
-                    ${closeHtml}
                 </div>`;
     }).join('');
 }
@@ -2783,25 +2809,6 @@ function renderInstructionList() {
 /**
  * 全員宛ての指示をオーナーが閉じる（全員がチェックしたとき、または不要になったとき）
  */
-async function closeInstruction(id) {
-    if (!id) return;
-    if (!confirm('この指示を完了にしますか。全員の画面から消えます。')) return;
-
-    try {
-        showLoading('完了にしています...');
-        await completeInstructionInGas(id, getStaffName(), true);
-        await fetchInstructionsFromGas('', false);
-        hideLoading();
-
-        renderInstructionList();
-        showToast('完了にしました');
-    } catch (error) {
-        hideLoading();
-        console.error('Close instruction failed:', error);
-        showError(error.message || '指示の更新に失敗しました');
-    }
-}
-
 async function refreshInstructions() {
     try {
         // オーナーは全員分（完了済みも含めて）見る
@@ -2814,29 +2821,34 @@ async function refreshInstructions() {
 }
 
 async function createInstruction() {
-    const target = document.getElementById('instruction-target').value;
-    const content = document.getElementById('instruction-content').value.trim();
+    const raw = document.getElementById('instruction-content').value;
     const due = document.getElementById('instruction-due').value;
 
-    if (!target) {
-        showError('宛先を選んでください');
+    const parsed = parseInstructionMentions(raw, getTreatmentStaffNamesForConfig());
+
+    if (parsed.targets.length === 0) {
+        showError('宛先が入っていません。@長谷川 のように先頭に名前を書いてください');
         return;
     }
-    if (!content) {
+    if (!parsed.content) {
         showError('指示の内容を入力してください');
         return;
     }
 
     try {
         showLoading('指示を登録中...');
-        await saveInstructionToGas({ target: target, content: content, due: due });
+        await saveInstructionToGas({
+            targets: parsed.targets,
+            content: parsed.content,
+            due: due
+        });
         await fetchInstructionsFromGas('', false);
         hideLoading();
 
         document.getElementById('instruction-content').value = '';
         document.getElementById('instruction-due').value = '';
         renderInstructionList();
-        showToast('指示を登録しました');
+        showToast(`${parsed.targets.join('・')} に送りました`);
     } catch (error) {
         hideLoading();
         console.error('Save instruction failed:', error);

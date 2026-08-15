@@ -38,7 +38,7 @@ const INSTRUCTION_STATUS_COLUMN = INSTRUCTION_HEADERS.indexOf('状態') + 1;
 const INSTRUCTION_DONE_BY_COLUMN = INSTRUCTION_HEADERS.indexOf('完了者') + 1;
 const INSTRUCTION_DONE_AT_COLUMN = INSTRUCTION_HEADERS.indexOf('完了日') + 1;
 // 宛先に入れる「全員」の表記。施術者名と混ざらないよう1か所に固定する。
-const INSTRUCTION_ALL_TARGET = '全員';
+// 「@全員」はアプリ側で1人ずつに展開してから送ってくるので、シートに「全員」の行は入らない
 const INSTRUCTION_DONE = '完了';
 
 /**
@@ -951,20 +951,8 @@ function toInstructionRecord_(row) {
     due: toIsoDateString(row[INSTRUCTION_HEADERS.indexOf('期限')]),
     status: String(row[INSTRUCTION_HEADERS.indexOf('状態')] || ''),
     doneBy: String(row[INSTRUCTION_DONE_BY_COLUMN - 1] || ''),
-    doneByList: splitDoneBy_(row[INSTRUCTION_DONE_BY_COLUMN - 1]),
     doneAt: toIsoDateString(row[INSTRUCTION_DONE_AT_COLUMN - 1])
   };
-}
-
-/**
- * 完了者欄は「長谷川, 小幡」のように複数名が入る。
- * 全員宛ての指示を1人がチェックしても、他の人の画面からは消さないため。
- */
-function splitDoneBy_(value) {
-  return String(value || '')
-    .split(',')
-    .map(function (name) { return name.trim(); })
-    .filter(Boolean);
 }
 
 /**
@@ -986,15 +974,9 @@ function getInstructions(data) {
       // IDも内容も無い空行は飛ばす
       if (!record.id && !record.content) continue;
 
-      if (target && record.target !== target && record.target !== INSTRUCTION_ALL_TARGET) {
-        continue;
-      }
-      // 全員宛ては1行しか無いので、状態だけで判定すると
-      // 最初にチェックした人以外の画面からも消えてしまう。完了者欄で1人ずつ見る
-      if (onlyPending) {
-        if (record.status === INSTRUCTION_DONE) continue;
-        if (target && record.doneByList.indexOf(target) !== -1) continue;
-      }
+      // 1人1行なので、自分宛て以外は返さない
+      if (target && record.target !== target) continue;
+      if (onlyPending && record.status === INSTRUCTION_DONE) continue;
 
       records.push(record);
     }
@@ -1013,26 +995,39 @@ function saveInstruction(data) {
     const sheet = getOrCreateInstructionSheet();
 
     const content = String(data.content || '').trim();
-    const target = String(data.target || '').trim();
 
-    if (!target) throw new Error('宛先を選んでください');
+    // 宛先は複数。@で複数の人に送っても、シートには1人1行で入れる。
+    // 1行を共有すると、誰か1人がチェックしたときに他の人の画面からも消えてしまうため
+    const targets = (data.targets || [String(data.target || '')])
+      .map(function (name) { return String(name || '').trim(); })
+      .filter(Boolean)
+      .filter(function (name, index, all) { return all.indexOf(name) === index; });
+
+    if (targets.length === 0) throw new Error('宛先を指定してください');
     if (!content) throw new Error('指示の内容を入力してください');
 
+    // 同じ指示から作った行は同じIDを持つ。オーナー画面でまとめて表示するため
     const id = data.id || ('INS-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000));
+    const createdAt = toIsoDateString(data.createdAt) || todayIsoDate_();
+    const due = toIsoDateString(data.due);
 
-    const row = [];
-    row[INSTRUCTION_HEADERS.indexOf('ID')] = id;
-    row[INSTRUCTION_HEADERS.indexOf('作成日')] = toIsoDateString(data.createdAt) || todayIsoDate_();
-    row[INSTRUCTION_HEADERS.indexOf('宛先')] = target;
-    row[INSTRUCTION_HEADERS.indexOf('内容')] = content;
-    row[INSTRUCTION_HEADERS.indexOf('期限')] = toIsoDateString(data.due);
-    row[INSTRUCTION_HEADERS.indexOf('状態')] = '';
-    row[INSTRUCTION_DONE_BY_COLUMN - 1] = '';
-    row[INSTRUCTION_DONE_AT_COLUMN - 1] = '';
+    const rows = targets.map(function (target) {
+      const row = [];
+      row[INSTRUCTION_HEADERS.indexOf('ID')] = id;
+      row[INSTRUCTION_HEADERS.indexOf('作成日')] = createdAt;
+      row[INSTRUCTION_HEADERS.indexOf('宛先')] = target;
+      row[INSTRUCTION_HEADERS.indexOf('内容')] = content;
+      row[INSTRUCTION_HEADERS.indexOf('期限')] = due;
+      row[INSTRUCTION_HEADERS.indexOf('状態')] = '';
+      row[INSTRUCTION_DONE_BY_COLUMN - 1] = '';
+      row[INSTRUCTION_DONE_AT_COLUMN - 1] = '';
+      return row;
+    });
 
-    sheet.appendRow(row);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, INSTRUCTION_HEADERS.length)
+      .setValues(rows);
 
-    return { success: true, id: id, message: '指示を登録しました' };
+    return { success: true, id: id, count: rows.length, message: '指示を登録しました' };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
@@ -1045,6 +1040,7 @@ function completeInstruction(data) {
   try {
     const sheet = getOrCreateInstructionSheet();
     const id = String(data.id || '').trim();
+    const staff = String(data.staff || '').trim();
 
     if (!id) throw new Error('指示IDが指定されていません');
 
@@ -1053,19 +1049,13 @@ function completeInstruction(data) {
     for (let i = 1; i < values.length; i++) {
       if (String(values[i][INSTRUCTION_ID_COLUMN - 1] || '') !== id) continue;
 
+      // 同じIDの行が宛先の人数ぶんある。自分の行だけを完了にする
+      const rowTarget = String(values[i][INSTRUCTION_HEADERS.indexOf('宛先')] || '').trim();
+      if (staff && rowTarget !== staff) continue;
+
       const rowNumber = i + 1;
-      const record = toInstructionRecord_(values[i]);
-      const staff = String(data.staff || '').trim();
-
-      // 完了者は上書きせず足す。全員宛ては全員がチェックするまで残す
-      const doneBy = record.doneByList.slice();
-      if (staff && doneBy.indexOf(staff) === -1) doneBy.push(staff);
-      sheet.getRange(rowNumber, INSTRUCTION_DONE_BY_COLUMN).setValue(doneBy.join(', '));
-
-      // 個人宛ては本人が押した時点で完了。全員宛てはオーナーが閉じるまで開いたまま
-      if (record.target !== INSTRUCTION_ALL_TARGET || data.closeAll) {
-        sheet.getRange(rowNumber, INSTRUCTION_STATUS_COLUMN).setValue(INSTRUCTION_DONE);
-      }
+      sheet.getRange(rowNumber, INSTRUCTION_STATUS_COLUMN).setValue(INSTRUCTION_DONE);
+      sheet.getRange(rowNumber, INSTRUCTION_DONE_BY_COLUMN).setValue(staff || rowTarget);
 
       const doneAt = sheet.getRange(rowNumber, INSTRUCTION_DONE_AT_COLUMN);
       doneAt.setNumberFormat('@');

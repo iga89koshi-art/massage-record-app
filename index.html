@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=19">
+    <link rel="stylesheet" href="./styles/main.css?v=20">
 </head>
 
 <body>
@@ -469,13 +469,15 @@
             <div class="settings-section">
                 <h3>新しい指示</h3>
                 <div class="form-group">
-                    <label for="instruction-target">宛先 <span class="required">*</span></label>
-                    <select id="instruction-target" class="form-control"></select>
-                </div>
-                <div class="form-group">
                     <label for="instruction-content">内容 <span class="required">*</span></label>
                     <textarea id="instruction-content" class="form-control" rows="3"
-                        placeholder="例：佐藤様の同意書を今週中にもらってきてください"></textarea>
+                        placeholder="@長谷川 佐藤様の同意書を今週中にもらってきてください"></textarea>
+                    <div class="instruction-mention-row" id="instruction-mentions"></div>
+                    <p class="form-hint">
+                        先頭に <strong>@名前</strong> を書くとその人に届きます。
+                        複数書けば全員に届き、<strong>@全員</strong> なら施術者全員に届きます。
+                        受け取った人には自分宛ての分だけが見えます。
+                    </p>
                 </div>
                 <div class="form-group">
                     <label for="instruction-due">期限</label>
@@ -636,12 +638,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=19"></script>
-    <script src="./js/storage.js?v=19"></script>
-    <script src="./js/config-share.js?v=19"></script>
-    <script src="./js/api.js?v=19"></script>
-    <script src="./js/ui.js?v=19"></script>
-    <script src="./js/app.js?v=19"></script>
+    <script src="./js/utils.js?v=20"></script>
+    <script src="./js/storage.js?v=20"></script>
+    <script src="./js/config-share.js?v=20"></script>
+    <script src="./js/api.js?v=20"></script>
+    <script src="./js/ui.js?v=20"></script>
+    <script src="./js/app.js?v=20"></script>
 </body>
 
 </html>
