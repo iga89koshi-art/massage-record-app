@@ -1542,7 +1542,8 @@ tbody tr:hover {
     color: var(--danger-color);
 }
 
-.instruction-done-btn {
+.instruction-done-btn,
+.instruction-close-btn {
     flex-shrink: 0;
     width: auto;
     min-height: 44px;

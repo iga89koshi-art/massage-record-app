@@ -2571,6 +2571,19 @@ function sortInstructions(list) {
 }
 
 /**
+ * 完了者は「長谷川, 小幡」のように複数名が入る。古いキャッシュは1名分の文字列なので両方受ける。
+ */
+function getInstructionDoneBy(item) {
+    if (!item) return [];
+    if (Array.isArray(item.doneByList)) return item.doneByList;
+
+    return String(item.doneBy || '')
+        .split(',')
+        .map(name => name.trim())
+        .filter(Boolean);
+}
+
+/**
  * この端末で受け取るべき未完了の指示（自分宛て＋全員宛て）
  */
 function getMyPendingInstructions() {
@@ -2578,6 +2591,8 @@ function getMyPendingInstructions() {
 
     return sortInstructions(getInstructionsCache().filter(item => {
         if (!item || item.status === INSTRUCTION_DONE) return false;
+        // 全員宛ては1行を全員で共有している。自分がチェック済みかは完了者欄で見る
+        if (me && getInstructionDoneBy(item).indexOf(me) !== -1) return false;
         return item.target === INSTRUCTION_ALL_TARGET || (me && item.target === me);
     }));
 }
@@ -2665,12 +2680,18 @@ async function completeInstructionCard(id) {
         await completeInstructionInGas(id, getStaffName());
         hideLoading();
 
-        // 書き込めたらキャッシュ側も完了にして、通信を待たずに消す
+        // 書き込めたらキャッシュ側も直して、通信を待たずに自分の画面から消す。
+        // 全員宛ては他の人の分が残るので、状態ではなく完了者に自分を足す
+        const me = getStaffName();
         const list = getInstructionsCache().map(item => {
             if (item && item.id === id) {
-                item.status = INSTRUCTION_DONE;
-                item.doneBy = getStaffName();
+                const doneBy = getInstructionDoneBy(item);
+                if (me && doneBy.indexOf(me) === -1) doneBy.push(me);
+
+                item.doneByList = doneBy;
+                item.doneBy = doneBy.join(', ');
                 item.doneAt = getToday();
+                if (item.target !== INSTRUCTION_ALL_TARGET) item.status = INSTRUCTION_DONE;
             }
             return item;
         });
@@ -2731,10 +2752,22 @@ function renderInstructionList() {
         if (item.due) meta.push(formatInstructionDue(item.due));
         if (item.createdAt) meta.push(`作成 ${item.createdAt}`);
 
-        // 誰が消したかが分かるようにする（全員宛ては最初にチェックした人の名前が入る）
-        const statusText = done
-            ? `✓ 完了${item.doneBy ? `（${item.doneBy}）` : ''}${item.doneAt ? ` ${item.doneAt}` : ''}`
-            : '未完了';
+        // 誰がチェックしたかを全員分出す。全員宛ては何人が済んだかが知りたいところ
+        const doneBy = getInstructionDoneBy(item);
+        let statusText;
+        if (done) {
+            statusText = `✓ 完了${doneBy.length ? `（${doneBy.join('・')}）` : ''}${item.doneAt ? ` ${item.doneAt}` : ''}`;
+        } else if (doneBy.length) {
+            statusText = `${doneBy.length}名済み（${doneBy.join('・')}）`;
+        } else {
+            statusText = '未完了';
+        }
+
+        // 全員宛ては全員がチェックしても自動では閉じないので、オーナーが閉じられるようにする
+        const closeHtml = (!done && item.target === INSTRUCTION_ALL_TARGET)
+            ? `<button type="button" class="btn btn-secondary instruction-close-btn"
+                    onclick="closeInstruction('${escapeHtml(item.id)}')">閉じる</button>`
+            : '';
 
         return `<div class="instruction-card${doneClass}">
                     <div class="instruction-card-body">
@@ -2742,8 +2775,31 @@ function renderInstructionList() {
                         <span class="instruction-meta">${escapeHtml(meta.join('　'))}</span>
                     </div>
                     <span class="instruction-status${doneClass}">${escapeHtml(statusText)}</span>
+                    ${closeHtml}
                 </div>`;
     }).join('');
+}
+
+/**
+ * 全員宛ての指示をオーナーが閉じる（全員がチェックしたとき、または不要になったとき）
+ */
+async function closeInstruction(id) {
+    if (!id) return;
+    if (!confirm('この指示を完了にしますか。全員の画面から消えます。')) return;
+
+    try {
+        showLoading('完了にしています...');
+        await completeInstructionInGas(id, getStaffName(), true);
+        await fetchInstructionsFromGas('', false);
+        hideLoading();
+
+        renderInstructionList();
+        showToast('完了にしました');
+    } catch (error) {
+        hideLoading();
+        console.error('Close instruction failed:', error);
+        showError(error.message || '指示の更新に失敗しました');
+    }
 }
 
 async function refreshInstructions() {

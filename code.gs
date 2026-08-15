@@ -951,8 +951,20 @@ function toInstructionRecord_(row) {
     due: toIsoDateString(row[INSTRUCTION_HEADERS.indexOf('期限')]),
     status: String(row[INSTRUCTION_HEADERS.indexOf('状態')] || ''),
     doneBy: String(row[INSTRUCTION_DONE_BY_COLUMN - 1] || ''),
+    doneByList: splitDoneBy_(row[INSTRUCTION_DONE_BY_COLUMN - 1]),
     doneAt: toIsoDateString(row[INSTRUCTION_DONE_AT_COLUMN - 1])
   };
+}
+
+/**
+ * 完了者欄は「長谷川, 小幡」のように複数名が入る。
+ * 全員宛ての指示を1人がチェックしても、他の人の画面からは消さないため。
+ */
+function splitDoneBy_(value) {
+  return String(value || '')
+    .split(',')
+    .map(function (name) { return name.trim(); })
+    .filter(Boolean);
 }
 
 /**
@@ -977,8 +989,11 @@ function getInstructions(data) {
       if (target && record.target !== target && record.target !== INSTRUCTION_ALL_TARGET) {
         continue;
       }
-      if (onlyPending && record.status === INSTRUCTION_DONE) {
-        continue;
+      // 全員宛ては1行しか無いので、状態だけで判定すると
+      // 最初にチェックした人以外の画面からも消えてしまう。完了者欄で1人ずつ見る
+      if (onlyPending) {
+        if (record.status === INSTRUCTION_DONE) continue;
+        if (target && record.doneByList.indexOf(target) !== -1) continue;
       }
 
       records.push(record);
@@ -1039,8 +1054,18 @@ function completeInstruction(data) {
       if (String(values[i][INSTRUCTION_ID_COLUMN - 1] || '') !== id) continue;
 
       const rowNumber = i + 1;
-      sheet.getRange(rowNumber, INSTRUCTION_STATUS_COLUMN).setValue(INSTRUCTION_DONE);
-      sheet.getRange(rowNumber, INSTRUCTION_DONE_BY_COLUMN).setValue(String(data.staff || ''));
+      const record = toInstructionRecord_(values[i]);
+      const staff = String(data.staff || '').trim();
+
+      // 完了者は上書きせず足す。全員宛ては全員がチェックするまで残す
+      const doneBy = record.doneByList.slice();
+      if (staff && doneBy.indexOf(staff) === -1) doneBy.push(staff);
+      sheet.getRange(rowNumber, INSTRUCTION_DONE_BY_COLUMN).setValue(doneBy.join(', '));
+
+      // 個人宛ては本人が押した時点で完了。全員宛てはオーナーが閉じるまで開いたまま
+      if (record.target !== INSTRUCTION_ALL_TARGET || data.closeAll) {
+        sheet.getRange(rowNumber, INSTRUCTION_STATUS_COLUMN).setValue(INSTRUCTION_DONE);
+      }
 
       const doneAt = sheet.getRange(rowNumber, INSTRUCTION_DONE_AT_COLUMN);
       doneAt.setNumberFormat('@');
