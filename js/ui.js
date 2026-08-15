@@ -2171,6 +2171,20 @@ function initSettingsScreen() {
  * 「この端末の役割」の選択と施術者名プルダウンを今の設定に合わせる。
  * 施術者名は担当者マスタ（getStaff）から出す。
  */
+/**
+ * 設定コードを配る相手の候補。担当者マスタの名前を並べる。
+ * 訪問予定に出てくる施術者を先に出す（実際に配る相手はほぼこちらのため）。
+ */
+function getTreatmentStaffNamesForConfig() {
+    const fromMaster = getStaff().map(s => s && s.name).filter(Boolean);
+    const fromPlans = getScheduleStaffList(getVisitPlans() || []);
+    const ordered = fromPlans.slice();
+    fromMaster.forEach(name => {
+        if (ordered.indexOf(name) === -1) ordered.push(name);
+    });
+    return ordered;
+}
+
 function populateRoleSettings() {
     const roleSelect = document.getElementById('setting-role');
     const nameSelect = document.getElementById('setting-staff-name');
@@ -2374,6 +2388,23 @@ async function exportConfig() {
         return;
     }
 
+    // 誰に渡すコードかをここで決める。
+    // こうしないと「スタッフの端末を借りて、その場で役割を切り替える」手作業が毎回要る。
+    const staffNames = getTreatmentStaffNamesForConfig();
+    const menu = ['0: 自分用（オーナー）']
+        .concat(staffNames.map((n, i) => `${i + 1}: ${n}さん用（スタッフ）`))
+        .join('\n');
+    const picked = prompt(`誰に渡す設定コードですか。番号を入れてください。\n\n${menu}`, '0');
+    if (picked === null) return;
+
+    const idx = Number(String(picked).trim());
+    if (!Number.isInteger(idx) || idx < 0 || idx > staffNames.length) {
+        showError('番号が正しくありません');
+        return;
+    }
+    const targetRole = idx === 0 ? ROLE_OWNER : ROLE_STAFF;
+    const targetStaff = idx === 0 ? '' : staffNames[idx - 1];
+
     const password = prompt('設定コードを開くためのパスワードを決めてください:');
     if (password === null || password === '') return;
 
@@ -2385,8 +2416,16 @@ async function exportConfig() {
 
     try {
         showLoading('設定コードを作成中...');
-        const code = await encodeConfigBundle(collectShareableSettings(), password);
+        // 自分の役割ではなく、渡す相手の役割を埋め込む
+        const bundle = collectShareableSettings();
+        bundle.role = targetRole;
+        bundle.staffName = targetStaff;
+        const code = await encodeConfigBundle(bundle, password);
         hideLoading();
+
+        showToast(targetRole === ROLE_STAFF
+            ? `${targetStaff}さん用の設定コードを作りました`
+            : 'オーナー用の設定コードを作りました');
 
         document.getElementById('config-export-code').value = code;
         togglePanel('config-export-panel', true);
