@@ -13,7 +13,8 @@ const OPERATION_PARTS = ['頸部', '肩部', '背部', '腰部', '上肢', '下�
 const OPERATION_TREATMENTS = ['刺鍼', 'てい鍼', '電子温灸器'];
 
 // スタッフ用端末では開かせない画面（ホームのボタンも出さない）
-const OWNER_ONLY_SCREENS = ['sales', 'label-print'];
+// 指示の一覧・作成はオーナーの画面。スタッフはホームのカードでチェックするだけ。
+const OWNER_ONLY_SCREENS = ['sales', 'label-print', 'instructions'];
 
 /**
  * 画面遷移
@@ -42,9 +43,16 @@ function showScreen(screenId) {
 function initScreen(screenId) {
     switch (screenId) {
         case 'home':
+            initHomeScreen();
             break;
         case 'treatment':
             initTreatmentScreen();
+            break;
+        case 'patient-info':
+            initPatientInfoScreen();
+            break;
+        case 'instructions':
+            initInstructionsScreen();
             break;
         case 'sales':
             initSalesScreen();
@@ -92,6 +100,11 @@ function applyRoleToUi() {
     // ホーム：営業記録と宛名ラベルはスタッフ用端末には出さない
     toggleHidden('btn-sales', staffDevice);
     toggleHidden('btn-labels', staffDevice);
+    // 指示は「出す側」の画面なのでオーナーだけ。スタッフはホームのカードで受け取る
+    toggleHidden('btn-instructions', staffDevice);
+
+    // 患者情報：スタッフ用端末では自分が関わる患者だけになる旨を出す
+    toggleHidden('patient-info-staff-note', !staffDevice);
 
     // 施術記録入力：担当者は自分に固定（selectは値を使うので隠すだけ）
     toggleHidden('treatment-staff-group', staffDevice);
@@ -187,6 +200,14 @@ function setupHomeScreen() {
 
     document.getElementById('btn-schedule').addEventListener('click', () => {
         showScreen('schedule-view');
+    });
+
+    document.getElementById('btn-patient-info').addEventListener('click', () => {
+        showScreen('patient-info');
+    });
+
+    document.getElementById('btn-instructions').addEventListener('click', () => {
+        showScreen('instructions');
     });
 
     document.getElementById('btn-labels').addEventListener('click', () => {
@@ -1356,6 +1377,9 @@ function initScheduleScreen() {
     if (getTreatmentVisitPlans().length === 0) {
         loadVisitPlansIfEmpty();
     }
+
+    // 他サービスの併記用。無くてもスケジュールは出せるので黙って裏で取る
+    loadServicePlansIfEmpty(renderScheduleScreen);
 }
 
 /**
@@ -1485,11 +1509,18 @@ function renderScheduleDay(plans, staff) {
             ? `<span class="schedule-card-meta">${meta.join('　')}</span>`
             : '';
 
+        // その曜日に他サービスが入っていれば、予定の下に小さく併記する
+        // （スケジュールを組み替えるときの制約をその場で見えるようにするため）
+        const serviceHtml = findServicePlansForVisit(plan.name, dayName)
+            .map(servicePlan => `<span class="schedule-card-service">⚠ ${escapeHtml(formatServicePlanLabel(servicePlan))}</span>`)
+            .join('');
+
         return `<button type="button" class="schedule-card" onclick="openScheduleEntry(${index})">
                     <span class="schedule-card-time">${escapeHtml(plan.time || '--:--')}</span>
                     <span class="schedule-card-body">
                         <span class="schedule-card-name">${escapeHtml(plan.name)}</span>
                         ${metaHtml}
+                        ${serviceHtml}
                     </span>
                 </button>`;
     }).join('');
@@ -2150,6 +2181,622 @@ function setupViewScreen() {
 }
 
 // =============================================
+// 患者情報画面（患者メモ ＋ 他サービス利用予定）
+//
+// 患者メモ（既往歴・現在の症状・同居家族）は患者キャッシュに一緒に入っているので、
+// 画面を開いた時点では通信しない。保存したときだけNotionへ書き戻す。
+// =============================================
+
+// 他サービス利用予定の取得を試したか（キャッシュが空でも取得は1回だけにする）
+let servicePlanFetchTried = false;
+
+/**
+ * 他サービス利用予定のキャッシュが空なら1度だけ取りに行く。
+ * 併記のための「あると嬉しい」データなので、失敗しても画面は出す。
+ */
+async function loadServicePlansIfEmpty(onLoaded) {
+    if (servicePlanFetchTried) return;
+    if (getServicePlans().length > 0) return;
+    servicePlanFetchTried = true;
+
+    try {
+        await fetchServicePlansFromNotion();
+        if (typeof onLoaded === 'function') onLoaded();
+    } catch (error) {
+        console.warn('Load service plans failed:', error);
+    }
+}
+
+/**
+ * 「デイサービス（午前）」「訪問看護（10:00〜11:00）」のような1行の表示にする
+ */
+function formatServicePlanLabel(plan) {
+    const service = plan.service || 'その他';
+
+    let when = plan.band || '';
+    if (plan.startTime) {
+        when = plan.endTime ? `${plan.startTime}〜${plan.endTime}` : plan.startTime;
+    }
+
+    return when ? `${service}（${when}）` : service;
+}
+
+/**
+ * 訪問予定の患者が、その曜日に使っている他サービスを探す。
+ * 予定の患者名は「佐藤精次 / 髙橋 伊三郎」のように連結されていることがあるので分解して見る。
+ */
+function findServicePlansForVisit(visitName, dayName) {
+    const keys = splitScheduleNames(visitName).map(normalizePatientName).filter(Boolean);
+    if (!keys.length) return [];
+
+    return getServicePlans().filter(plan => {
+        if (!plan || (plan.days || []).indexOf(dayName) === -1) return false;
+        return (plan.patientNames || []).some(name => keys.indexOf(normalizePatientName(name)) !== -1);
+    });
+}
+
+/**
+ * その患者の他サービス利用予定。患者IDで引き、リレーションが解決できない分は名前で拾う。
+ */
+function getServicePlansForPatient(patient) {
+    if (!patient) return [];
+
+    const id = normalizeNotionId(patient.id);
+    const key = normalizePatientName(patient.name);
+
+    return getServicePlans().filter(plan =>
+        (plan.patientIds || []).indexOf(id) !== -1 ||
+        (plan.patientNames || []).some(name => normalizePatientName(name) === key)
+    );
+}
+
+function initPatientInfoScreen() {
+    populatePatientInfoSelect();
+    populateServicePlanForm();
+    togglePanel('service-plan-form', false);
+    renderPatientInfo();
+
+    // 他サービスがまだ無ければ取りに行き、取れたら描き直す
+    loadServicePlansIfEmpty(renderPatientInfo);
+}
+
+/**
+ * 患者のプルダウン。スタッフ用端末では自分が関わる患者だけにする。
+ */
+function populatePatientInfoSelect() {
+    const select = document.getElementById('patient-info-select');
+    if (!select) return;
+
+    const previous = select.value;
+    const patients = filterByMyPatients(getPatients(), p => p.name);
+
+    select.innerHTML = '<option value="">選択してください</option>' +
+        patients.map(patient => {
+            const id = escapeHtml(patient.id);
+            const name = escapeHtml(patient.name);
+            return `<option value="${id}">${name}</option>`;
+        }).join('');
+
+    // 開き直しても同じ患者が出るようにする
+    const stillThere = patients.some(p => p.id === previous);
+    select.value = stillThere ? previous : '';
+}
+
+/**
+ * いま選ばれている患者（キャッシュの患者オブジェクト）
+ */
+function getSelectedPatientInfo() {
+    const select = document.getElementById('patient-info-select');
+    const id = select ? select.value : '';
+    if (!id) return null;
+
+    return getPatients().find(p => p.id === id) || null;
+}
+
+function renderPatientInfo() {
+    const patient = getSelectedPatientInfo();
+
+    toggleHidden('patient-info-body', !patient);
+    if (!patient) return;
+
+    document.getElementById('patient-info-history').value = patient.history || '';
+    document.getElementById('patient-info-symptoms').value = patient.symptoms || '';
+    document.getElementById('patient-info-family').value = patient.family || '';
+
+    document.getElementById('patient-info-updated').textContent = patient.notesUpdated
+        ? `最終更新：${patient.notesUpdated}`
+        : 'まだ保存されていません';
+
+    renderServicePlanList(patient);
+}
+
+function onPatientInfoSelectChange() {
+    togglePanel('service-plan-form', false);
+    renderPatientInfo();
+}
+
+function renderServicePlanList(patient) {
+    const list = document.getElementById('service-plan-list');
+    if (!list) return;
+
+    const plans = getServicePlansForPatient(patient);
+
+    if (plans.length === 0) {
+        list.innerHTML = '<div class="schedule-empty">登録された他サービスはありません</div>';
+        return;
+    }
+
+    list.innerHTML = plans.map(plan => {
+        const detail = [];
+        if (plan.office) detail.push(escapeHtml(plan.office));
+        if ((plan.days || []).length) detail.push(escapeHtml(plan.days.join('・')));
+        if (plan.frequency) detail.push(escapeHtml(plan.frequency));
+
+        const noteHtml = plan.note
+            ? `<span class="service-plan-note">${escapeHtml(plan.note)}</span>`
+            : '';
+
+        return `<div class="service-plan-card">
+                    <div class="service-plan-card-head">
+                        <span class="service-plan-title">${escapeHtml(formatServicePlanLabel(plan))}</span>
+                        <button type="button" class="btn-remove-entry"
+                            onclick="removeServicePlan('${escapeHtml(plan.id)}')" aria-label="削除">×</button>
+                    </div>
+                    <span class="service-plan-detail">${detail.join('　')}</span>
+                    ${noteHtml}
+                </div>`;
+    }).join('');
+}
+
+/**
+ * 患者メモ（既往歴・現在の症状・同居家族）をNotionへ書き戻す
+ */
+async function savePatientNotes() {
+    const patient = getSelectedPatientInfo();
+
+    if (!patient) {
+        showError('患者を選んでください');
+        return;
+    }
+
+    const notes = {
+        history: document.getElementById('patient-info-history').value.trim(),
+        symptoms: document.getElementById('patient-info-symptoms').value.trim(),
+        family: document.getElementById('patient-info-family').value.trim()
+    };
+
+    try {
+        showLoading('患者情報を保存中...');
+        await updatePatientNotesInNotion(patient.id, notes);
+        hideLoading();
+        renderPatientInfo();
+        showToast('患者情報を保存しました');
+    } catch (error) {
+        hideLoading();
+        console.error('Save patient notes failed:', error);
+        showError(error.message || '患者情報の保存に失敗しました');
+    }
+}
+
+// === 他サービス利用予定の追加フォーム ===
+
+/**
+ * 選択肢を1度だけ流し込む（開くたびに作り直さない）
+ */
+function populateServicePlanForm() {
+    const serviceSelect = document.getElementById('service-plan-service');
+    const bandSelect = document.getElementById('service-plan-band');
+    const frequencySelect = document.getElementById('service-plan-frequency');
+    const daysBox = document.getElementById('service-plan-days');
+    if (!serviceSelect || !bandSelect || !frequencySelect || !daysBox) return;
+
+    const toOptions = (names) => '<option value="">選択してください</option>' +
+        names.map(name => {
+            const label = escapeHtml(name);
+            return `<option value="${label}">${label}</option>`;
+        }).join('');
+
+    serviceSelect.innerHTML = toOptions(SERVICE_PLAN_TYPES);
+    bandSelect.innerHTML = toOptions(SERVICE_PLAN_BANDS);
+    frequencySelect.innerHTML = toOptions(SERVICE_PLAN_FREQUENCIES);
+    daysBox.innerHTML = createCheckboxesHtml(SERVICE_PLAN_DAYS, 'service-plan-day', []);
+}
+
+/**
+ * 「時刻指定」のときだけ開始・終了時刻を出す
+ */
+function onServicePlanBandChange() {
+    const band = document.getElementById('service-plan-band').value;
+    toggleHidden('service-plan-time-group', band !== SERVICE_PLAN_EXACT_BAND);
+}
+
+function clearServicePlanForm() {
+    document.getElementById('service-plan-service').value = '';
+    document.getElementById('service-plan-office').value = '';
+    document.getElementById('service-plan-band').value = '';
+    document.getElementById('service-plan-start').value = '';
+    document.getElementById('service-plan-end').value = '';
+    document.getElementById('service-plan-frequency').value = '';
+    document.getElementById('service-plan-note').value = '';
+    document.querySelectorAll('#service-plan-days .service-plan-day').forEach(input => {
+        input.checked = false;
+    });
+    onServicePlanBandChange();
+}
+
+function showServicePlanForm() {
+    if (!getSelectedPatientInfo()) {
+        showError('先に患者を選んでください');
+        return;
+    }
+
+    clearServicePlanForm();
+    togglePanel('service-plan-form', true);
+    document.getElementById('service-plan-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveServicePlan() {
+    const patient = getSelectedPatientInfo();
+
+    if (!patient) {
+        showError('患者を選んでください');
+        return;
+    }
+
+    const service = document.getElementById('service-plan-service').value;
+    if (!service) {
+        showError('サービス種別を選んでください');
+        return;
+    }
+
+    const band = document.getElementById('service-plan-band').value;
+    const days = Array.from(document.querySelectorAll('#service-plan-days .service-plan-day'))
+        .filter(input => input.checked)
+        .map(input => input.value);
+
+    const plan = {
+        patientId: patient.id,
+        service: service,
+        office: document.getElementById('service-plan-office').value.trim(),
+        days: days,
+        band: band,
+        startTime: band === SERVICE_PLAN_EXACT_BAND
+            ? document.getElementById('service-plan-start').value : '',
+        endTime: band === SERVICE_PLAN_EXACT_BAND
+            ? document.getElementById('service-plan-end').value : '',
+        frequency: document.getElementById('service-plan-frequency').value,
+        note: document.getElementById('service-plan-note').value.trim(),
+        // スタッフ用端末では施術者名。オーナー端末は名前を持たないので「オーナー」と残す
+        staff: getStaffName() || 'オーナー'
+    };
+
+    try {
+        showLoading('他サービスを登録中...');
+        await createServicePlanInNotion(plan);
+        // 登録した分を含めて取り直す（IDや表示名はNotion側の値を正とする）
+        await fetchServicePlansFromNotion();
+        hideLoading();
+
+        togglePanel('service-plan-form', false);
+        renderPatientInfo();
+        showToast('他サービスの予定を登録しました');
+    } catch (error) {
+        hideLoading();
+        console.error('Save service plan failed:', error);
+        showError(error.message || '他サービスの登録に失敗しました');
+    }
+}
+
+async function removeServicePlan(planId) {
+    if (!planId) return;
+    if (!window.confirm('この他サービスの予定を削除しますか?')) return;
+
+    try {
+        showLoading('削除中...');
+        await deleteServicePlanInNotion(planId);
+        await fetchServicePlansFromNotion();
+        hideLoading();
+
+        renderPatientInfo();
+        showToast('他サービスの予定を削除しました');
+    } catch (error) {
+        hideLoading();
+        console.error('Delete service plan failed:', error);
+        showError(error.message || '他サービスの削除に失敗しました');
+    }
+}
+
+/**
+ * 患者リストと他サービスを取り直す（「最新に更新」）
+ */
+async function refreshPatientInfo() {
+    try {
+        showLoading('患者情報を取得中...');
+        await fetchPatientsFromNotion();
+        await fetchServicePlansFromNotion();
+        hideLoading();
+
+        populatePatientInfoSelect();
+        renderPatientInfo();
+        showToast('患者情報を更新しました');
+    } catch (error) {
+        hideLoading();
+        console.error('Refresh patient info failed:', error);
+        showError('患者情報の取得に失敗しました');
+    }
+}
+
+function setupPatientInfoScreen() {
+    document.getElementById('patient-info-select').addEventListener('change', onPatientInfoSelectChange);
+    document.getElementById('btn-save-patient-notes').addEventListener('click', savePatientNotes);
+    document.getElementById('btn-show-service-form').addEventListener('click', showServicePlanForm);
+    document.getElementById('service-plan-band').addEventListener('change', onServicePlanBandChange);
+    document.getElementById('btn-save-service-plan').addEventListener('click', saveServicePlan);
+    document.getElementById('btn-cancel-service-plan').addEventListener('click', () => {
+        togglePanel('service-plan-form', false);
+    });
+    document.getElementById('btn-refresh-patient-info').addEventListener('click', refreshPatientInfo);
+    document.getElementById('btn-back-patient-info').addEventListener('click', () => {
+        showScreen('home');
+    });
+}
+
+// =============================================
+// 指示チェックリスト
+//
+// オーナーが「指示」画面で登録し、スタッフはホームを開いたときにカードで受け取る。
+// 通知はしない（オーナーが見に行く形）。
+// =============================================
+
+// 宛先の「全員」。code.gs 側の INSTRUCTION_ALL_TARGET と同じ文字列にすること。
+const INSTRUCTION_ALL_TARGET = '全員';
+const INSTRUCTION_DONE = '完了';
+
+/**
+ * 未完了の指示が先、その中では期限が近い順（期限なしは後ろ）。
+ */
+function sortInstructions(list) {
+    return (list || []).slice().sort((a, b) => {
+        const aDone = a.status === INSTRUCTION_DONE ? 1 : 0;
+        const bDone = b.status === INSTRUCTION_DONE ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;
+
+        // 期限が入っていないものは末尾へ
+        const aDue = a.due || '9999-12-31';
+        const bDue = b.due || '9999-12-31';
+        if (aDue !== bDue) return aDue.localeCompare(bDue);
+
+        return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    });
+}
+
+/**
+ * この端末で受け取るべき未完了の指示（自分宛て＋全員宛て）
+ */
+function getMyPendingInstructions() {
+    const me = getStaffName();
+
+    return sortInstructions(getInstructionsCache().filter(item => {
+        if (!item || item.status === INSTRUCTION_DONE) return false;
+        return item.target === INSTRUCTION_ALL_TARGET || (me && item.target === me);
+    }));
+}
+
+/**
+ * 期限を「期限 8/20（明日）」のような短い表示にする。
+ * 過ぎているものははっきり分かるようにする。
+ */
+function formatInstructionDue(due) {
+    if (!due) return '';
+
+    const today = getToday();
+    if (due < today) return `期限 ${due}（過ぎています）`;
+    if (due === today) return `期限 ${due}（今日）`;
+    return `期限 ${due}`;
+}
+
+function initHomeScreen() {
+    renderHomeInstructions();
+
+    // スタッフ用端末だけ、ホームを開くたびに裏で取り直す（開いた瞬間はキャッシュで出す）
+    if (isStaffDevice()) {
+        refreshHomeInstructions();
+    }
+}
+
+/**
+ * ホームの指示カード（スタッフ用端末のみ）
+ */
+function renderHomeInstructions() {
+    const box = document.getElementById('home-instructions');
+    if (!box) return;
+
+    if (!isStaffDevice()) {
+        box.classList.add('hidden');
+        box.innerHTML = '';
+        return;
+    }
+
+    const items = getMyPendingInstructions();
+    box.classList.toggle('hidden', items.length === 0);
+
+    if (items.length === 0) {
+        box.innerHTML = '';
+        return;
+    }
+
+    box.innerHTML = items.map(item => {
+        const due = formatInstructionDue(item.due);
+        const overdue = item.due && item.due < getToday() ? ' is-overdue' : '';
+        const dueHtml = due ? `<span class="instruction-due${overdue}">${escapeHtml(due)}</span>` : '';
+
+        return `<div class="instruction-card">
+                    <div class="instruction-card-body">
+                        <span class="instruction-content">${escapeHtml(item.content)}</span>
+                        ${dueHtml}
+                    </div>
+                    <button type="button" class="btn btn-primary instruction-done-btn"
+                        onclick="completeInstructionCard('${escapeHtml(item.id)}')">✓ 完了</button>
+                </div>`;
+    }).join('');
+}
+
+/**
+ * スタッフ用端末で、自分宛て＋全員宛ての未完了を取り直す。
+ * 電波が悪いときに何度も叱られないよう、失敗しても黙って諦める。
+ */
+async function refreshHomeInstructions() {
+    try {
+        await fetchInstructionsFromGas(getStaffName(), true);
+        renderHomeInstructions();
+    } catch (error) {
+        console.warn('Load instructions failed:', error);
+    }
+}
+
+/**
+ * カードのチェック。完了を書き込んで、その場で消す。
+ */
+async function completeInstructionCard(id) {
+    if (!id) return;
+
+    try {
+        showLoading('完了にしています...');
+        await completeInstructionInGas(id, getStaffName());
+        hideLoading();
+
+        // 書き込めたらキャッシュ側も完了にして、通信を待たずに消す
+        const list = getInstructionsCache().map(item => {
+            if (item && item.id === id) {
+                item.status = INSTRUCTION_DONE;
+                item.doneBy = getStaffName();
+                item.doneAt = getToday();
+            }
+            return item;
+        });
+        saveInstructions(list);
+
+        renderHomeInstructions();
+        showToast('完了にしました');
+    } catch (error) {
+        hideLoading();
+        console.error('Complete instruction failed:', error);
+        showError(error.message || '指示の更新に失敗しました');
+    }
+}
+
+// === 指示画面（オーナー用） ===
+
+function initInstructionsScreen() {
+    populateInstructionTargets();
+    renderInstructionList();
+    refreshInstructions();
+}
+
+/**
+ * 宛先の候補。「全員」＋担当者マスタ・訪問予定に出てくる施術者。
+ */
+function populateInstructionTargets() {
+    const select = document.getElementById('instruction-target');
+    if (!select) return;
+
+    const previous = select.value;
+    const names = getTreatmentStaffNamesForConfig();
+
+    select.innerHTML = `<option value="${INSTRUCTION_ALL_TARGET}">${INSTRUCTION_ALL_TARGET}</option>` +
+        names.map(name => {
+            const label = escapeHtml(name);
+            return `<option value="${label}">${label}</option>`;
+        }).join('');
+
+    if (previous) select.value = previous;
+}
+
+function renderInstructionList() {
+    const list = document.getElementById('instruction-list');
+    if (!list) return;
+
+    const items = sortInstructions(getInstructionsCache());
+
+    if (items.length === 0) {
+        list.innerHTML = '<div class="schedule-empty">まだ指示はありません</div>';
+        return;
+    }
+
+    list.innerHTML = items.map(item => {
+        const done = item.status === INSTRUCTION_DONE;
+        const doneClass = done ? ' is-done' : '';
+
+        const meta = [`宛先：${item.target || '-'}`];
+        if (item.due) meta.push(formatInstructionDue(item.due));
+        if (item.createdAt) meta.push(`作成 ${item.createdAt}`);
+
+        // 誰が消したかが分かるようにする（全員宛ては最初にチェックした人の名前が入る）
+        const statusText = done
+            ? `✓ 完了${item.doneBy ? `（${item.doneBy}）` : ''}${item.doneAt ? ` ${item.doneAt}` : ''}`
+            : '未完了';
+
+        return `<div class="instruction-card${doneClass}">
+                    <div class="instruction-card-body">
+                        <span class="instruction-content">${escapeHtml(item.content)}</span>
+                        <span class="instruction-meta">${escapeHtml(meta.join('　'))}</span>
+                    </div>
+                    <span class="instruction-status${doneClass}">${escapeHtml(statusText)}</span>
+                </div>`;
+    }).join('');
+}
+
+async function refreshInstructions() {
+    try {
+        // オーナーは全員分（完了済みも含めて）見る
+        await fetchInstructionsFromGas('', false);
+        renderInstructionList();
+    } catch (error) {
+        console.error('Load instructions failed:', error);
+        showError('指示の取得に失敗しました');
+    }
+}
+
+async function createInstruction() {
+    const target = document.getElementById('instruction-target').value;
+    const content = document.getElementById('instruction-content').value.trim();
+    const due = document.getElementById('instruction-due').value;
+
+    if (!target) {
+        showError('宛先を選んでください');
+        return;
+    }
+    if (!content) {
+        showError('指示の内容を入力してください');
+        return;
+    }
+
+    try {
+        showLoading('指示を登録中...');
+        await saveInstructionToGas({ target: target, content: content, due: due });
+        await fetchInstructionsFromGas('', false);
+        hideLoading();
+
+        document.getElementById('instruction-content').value = '';
+        document.getElementById('instruction-due').value = '';
+        renderInstructionList();
+        showToast('指示を登録しました');
+    } catch (error) {
+        hideLoading();
+        console.error('Save instruction failed:', error);
+        showError(error.message || '指示の登録に失敗しました');
+    }
+}
+
+function setupInstructionsScreen() {
+    document.getElementById('btn-save-instruction').addEventListener('click', createInstruction);
+    document.getElementById('btn-refresh-instructions').addEventListener('click', refreshInstructions);
+    document.getElementById('btn-back-instructions').addEventListener('click', () => {
+        showScreen('home');
+    });
+}
+
+// =============================================
 // 設定画面
 // =============================================
 
@@ -2363,6 +3010,14 @@ async function reloadPatients() {
         failed.push('訪問予定');
     }
 
+    // 他サービス利用予定（患者リレーションを名前に直すため、患者リストの後に取得する）
+    try {
+        await fetchServicePlansFromNotion();
+    } catch (e) {
+        console.warn('Service plan reload failed:', e);
+        failed.push('他サービス');
+    }
+
     hideLoading();
 
     if (failed.length === 0) {
@@ -2567,6 +3222,8 @@ function initUI() {
     setupHomeScreen();
     setupTreatmentScreen();
     setupScheduleScreen();
+    setupPatientInfoScreen();
+    setupInstructionsScreen();
     setupLabelScreen();
     setupSalesScreen();
     setupViewScreen();

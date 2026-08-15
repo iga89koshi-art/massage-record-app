@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=18">
+    <link rel="stylesheet" href="./styles/main.css?v=19">
 </head>
 
 <body>
@@ -35,6 +35,10 @@
                 <span>📤 未送信の記録が<strong id="sync-pending-count">0</strong>件あります</span>
                 <button type="button" id="btn-sync-now" class="btn-sync-now">今すぐ送信</button>
             </div>
+            <!-- スタッフ用端末：自分宛ての未完了の指示（チェックすると消える） -->
+            <div id="home-instructions" class="home-instructions hidden">
+                <!-- 動的に追加される -->
+            </div>
             <div class="button-grid">
                 <button id="btn-treatment" class="menu-btn primary">
                     <span class="icon">📝</span>
@@ -43,6 +47,14 @@
                 <button id="btn-schedule" class="menu-btn accent">
                     <span class="icon">📅</span>
                     <span class="label">訪問スケジュール</span>
+                </button>
+                <button id="btn-patient-info" class="menu-btn patient">
+                    <span class="icon">👤</span>
+                    <span class="label">患者情報</span>
+                </button>
+                <button id="btn-instructions" class="menu-btn task">
+                    <span class="icon">📋</span>
+                    <span class="label">指示</span>
                 </button>
                 <button id="btn-labels" class="menu-btn print">
                     <span class="icon">✉️</span>
@@ -348,6 +360,145 @@
         </div>
     </div>
 
+    <!-- 患者情報画面 -->
+    <div id="patient-info" class="screen">
+        <div class="container">
+            <header class="screen-header">
+                <h2>👤 患者情報</h2>
+            </header>
+
+            <div class="form-group">
+                <label for="patient-info-select">患者</label>
+                <select id="patient-info-select" class="form-control">
+                    <option value="">選択してください</option>
+                </select>
+                <p id="patient-info-staff-note" class="section-note hidden">自分が関わる患者だけを表示しています。</p>
+            </div>
+
+            <div id="patient-info-body" class="hidden">
+                <!-- 既往歴・現在の症状・同居家族 -->
+                <div class="settings-section">
+                    <h3>患者メモ</h3>
+                    <div class="form-group">
+                        <label for="patient-info-history">既往歴</label>
+                        <textarea id="patient-info-history" class="form-control" rows="3"
+                            placeholder="例：脳梗塞（2020年）、高血圧"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="patient-info-symptoms">現在の症状</label>
+                        <textarea id="patient-info-symptoms" class="form-control" rows="3"
+                            placeholder="例：右半身に麻痺、歩行時にふらつき"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="patient-info-family">同居家族</label>
+                        <textarea id="patient-info-family" class="form-control" rows="2"
+                            placeholder="例：長女夫婦と同居。平日日中は独居"></textarea>
+                    </div>
+                    <p id="patient-info-updated" class="section-note"></p>
+                    <button type="button" id="btn-save-patient-notes" class="btn btn-primary">患者メモを保存</button>
+                </div>
+
+                <!-- 他サービス利用予定 -->
+                <div class="settings-section">
+                    <h3>他サービス利用予定</h3>
+                    <p class="section-note">ここに入れた予定は、訪問スケジュールの日表示にも小さく併記されます。</p>
+                    <div id="service-plan-list" class="service-plan-list">
+                        <!-- 動的に追加される -->
+                    </div>
+                    <button type="button" id="btn-show-service-form" class="btn btn-info">＋ 予定を追加</button>
+
+                    <div id="service-plan-form" class="config-panel hidden">
+                        <div class="form-group">
+                            <label for="service-plan-service">サービス種別 <span class="required">*</span></label>
+                            <select id="service-plan-service" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="service-plan-office">事業所名</label>
+                            <input type="text" id="service-plan-office" class="form-control" placeholder="例：越谷ケアセンター">
+                        </div>
+                        <div class="form-group">
+                            <label>曜日（複数選べます）</label>
+                            <div id="service-plan-days" class="check-grid">
+                                <!-- 動的に追加される -->
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="service-plan-band">時間帯</label>
+                            <select id="service-plan-band" class="form-control"></select>
+                        </div>
+                        <div id="service-plan-time-group" class="hidden">
+                            <div class="form-group">
+                                <label for="service-plan-start">開始時刻</label>
+                                <input type="time" id="service-plan-start" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="service-plan-end">終了時刻</label>
+                                <input type="time" id="service-plan-end" class="form-control">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="service-plan-frequency">頻度</label>
+                            <select id="service-plan-frequency" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="service-plan-note">備考</label>
+                            <textarea id="service-plan-note" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="button-group-inline">
+                            <button type="button" id="btn-save-service-plan" class="btn btn-primary">この予定を登録</button>
+                            <button type="button" id="btn-cancel-service-plan" class="btn btn-secondary">やめる</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button type="button" id="btn-refresh-patient-info" class="btn btn-info">最新に更新</button>
+                <button type="button" id="btn-back-patient-info" class="btn btn-secondary">戻る</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 指示チェックリスト画面（オーナー用） -->
+    <div id="instructions" class="screen">
+        <div class="container">
+            <header class="screen-header">
+                <h2>📋 指示</h2>
+            </header>
+
+            <div class="settings-section">
+                <h3>新しい指示</h3>
+                <div class="form-group">
+                    <label for="instruction-target">宛先 <span class="required">*</span></label>
+                    <select id="instruction-target" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                    <label for="instruction-content">内容 <span class="required">*</span></label>
+                    <textarea id="instruction-content" class="form-control" rows="3"
+                        placeholder="例：佐藤様の同意書を今週中にもらってきてください"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="instruction-due">期限</label>
+                    <input type="date" id="instruction-due" class="form-control">
+                </div>
+                <button type="button" id="btn-save-instruction" class="btn btn-primary">この指示を出す</button>
+            </div>
+
+            <div class="settings-section">
+                <h3>出した指示</h3>
+                <p class="section-note">スタッフがホーム画面でチェックすると「完了」になります。</p>
+                <div id="instruction-list" class="instruction-list">
+                    <!-- 動的に追加される -->
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button type="button" id="btn-refresh-instructions" class="btn btn-info">最新に更新</button>
+                <button type="button" id="btn-back-instructions" class="btn btn-secondary">戻る</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 設定画面 -->
     <div id="settings" class="screen">
         <div class="container">
@@ -485,12 +636,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=18"></script>
-    <script src="./js/storage.js?v=18"></script>
-    <script src="./js/config-share.js?v=18"></script>
-    <script src="./js/api.js?v=18"></script>
-    <script src="./js/ui.js?v=18"></script>
-    <script src="./js/app.js?v=18"></script>
+    <script src="./js/utils.js?v=19"></script>
+    <script src="./js/storage.js?v=19"></script>
+    <script src="./js/config-share.js?v=19"></script>
+    <script src="./js/api.js?v=19"></script>
+    <script src="./js/ui.js?v=19"></script>
+    <script src="./js/app.js?v=19"></script>
 </body>
 
 </html>

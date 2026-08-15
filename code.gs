@@ -22,8 +22,37 @@ const SHEET_NAMES = {
   SALES: '営業記録',
   STAFF: '担当者マスタ',
   SCHEDULE: '基本スケジュール',
-  OPERATION: '施術録'
+  OPERATION: '施術録',
+  INSTRUCTION: '指示'
 };
+
+/**
+ * 指示チェックリストの列。
+ * ID / 作成日 / 宛先 / 内容 / 期限 / 状態 が本体で、
+ * 完了者・完了日は「誰がいつ消したか」をオーナーが後から見るための控え。
+ * 位置は必ずこの配列から引くこと（数字を直接書かない）。
+ */
+const INSTRUCTION_HEADERS = ['ID', '作成日', '宛先', '内容', '期限', '状態', '完了者', '完了日'];
+const INSTRUCTION_ID_COLUMN = INSTRUCTION_HEADERS.indexOf('ID') + 1;
+const INSTRUCTION_STATUS_COLUMN = INSTRUCTION_HEADERS.indexOf('状態') + 1;
+const INSTRUCTION_DONE_BY_COLUMN = INSTRUCTION_HEADERS.indexOf('完了者') + 1;
+const INSTRUCTION_DONE_AT_COLUMN = INSTRUCTION_HEADERS.indexOf('完了日') + 1;
+// 宛先に入れる「全員」の表記。施術者名と混ざらないよう1か所に固定する。
+const INSTRUCTION_ALL_TARGET = '全員';
+const INSTRUCTION_DONE = '完了';
+
+/**
+ * 他サービス利用予定データベース（Notion）。
+ * 院で固定なのでアプリの設定画面には出さない（宛名ラベルのDBと同じ扱い）。
+ */
+const SERVICE_PLAN_DB_ID = 'a18e5630-a2bf-4d5d-a22c-8a1cdfdf227b';
+
+// 選択肢は決め打ちにして、知らない値でセレクトが増えないようにする
+const SERVICE_PLAN_TYPES = ['訪問介護', '訪問看護', 'デイサービス', 'デイケア', '訪問リハビリ',
+  '訪問入浴', '訪問診療', '福祉用具', 'ショートステイ', 'その他'];
+const SERVICE_PLAN_DAYS = ['月', '火', '水', '木', '金', '土', '日'];
+const SERVICE_PLAN_BANDS = ['午前', '午後', '終日', '時刻指定'];
+const SERVICE_PLAN_FREQUENCIES = ['毎週', '隔週', '月1回', '不定期'];
 
 /**
  * 施術録（療養費の裏付けとなる保険記録）で使うチェック項目。
@@ -105,6 +134,24 @@ function doPost(e) {
         break;
       case 'updatePatientBase':
         result = updatePatientBaseTreatment(data);
+        break;
+      case 'updatePatientNotes':
+        result = updatePatientNotes(data);
+        break;
+      case 'createServicePlan':
+        result = createServicePlan(data);
+        break;
+      case 'deleteServicePlan':
+        result = deleteServicePlan(data);
+        break;
+      case 'getInstructions':
+        result = getInstructions(data);
+        break;
+      case 'saveInstruction':
+        result = saveInstruction(data);
+        break;
+      case 'completeInstruction':
+        result = completeInstruction(data);
         break;
       case 'ping':
         result = { success: true, message: 'pong' };
@@ -672,6 +719,342 @@ function updatePatientBaseTreatment(data) {
   }
 }
 
+// =============================================
+// Notionへの書き込み（患者メモ・他サービス利用予定）
+//
+// 患者DBにはレセコン同期・営業管理アプリ・手作業という別の書き込み経路がある。
+// 「送るプロパティは指定のものだけ」を徹底し、他の列を巻き込まないこと。
+// =============================================
+
+/**
+ * Notion APIキーを取り出す。
+ * proxyNotionPatients と同じく、サーバー側（スクリプトプロパティ）を優先し、
+ * 無ければクライアントから送られてきたキーを使う。
+ */
+function getNotionApiKey_(data) {
+  const serverApiKey = PropertiesService.getScriptProperties().getProperty('NOTION_API_KEY');
+  const apiKey = serverApiKey || (data && data.apiKey);
+
+  if (!apiKey) {
+    throw new Error('Notion APIキーが設定されていません');
+  }
+
+  return apiKey;
+}
+
+/**
+ * Notion APIを1回叩く。失敗時は本文付きで例外にする。
+ */
+function callNotionApi_(url, method, body, apiKey) {
+  const options = {
+    method: method,
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const statusCode = response.getResponseCode();
+
+  if (statusCode !== 200) {
+    throw new Error(`Notion API error: ${statusCode} - ${response.getContentText()}`);
+  }
+
+  return JSON.parse(response.getContentText());
+}
+
+/**
+ * テキストをNotionのrich_textにする。空文字は空配列＝欄を消す。
+ */
+function toNotionRichText_(value) {
+  const text = String(value == null ? '' : value);
+
+  if (!text) {
+    return { rich_text: [] };
+  }
+
+  // Notionの1ブロック上限（2000文字）を超えると弾かれるので切る
+  return { rich_text: [{ text: { content: text.slice(0, 2000) } }] };
+}
+
+/**
+ * 一覧に無い値は捨てる（セレクトに知らない選択肢が増えないようにする）
+ */
+function pickAllowedValue_(value, allowed) {
+  const text = String(value == null ? '' : value).trim();
+  return allowed.indexOf(text) !== -1 ? text : '';
+}
+
+function todayIsoDate_() {
+  return Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+}
+
+/**
+ * 患者ページのメモ欄を更新する。
+ * 触るのは 既往歴 / 現在の症状 / 同居家族 / 患者メモ最終更新 の4つだけ。
+ */
+function updatePatientNotes(data) {
+  try {
+    const apiKey = getNotionApiKey_(data);
+    const pageId = data.patientId;
+
+    if (!pageId) {
+      throw new Error('患者IDが指定されていません');
+    }
+
+    const properties = {
+      '既往歴': toNotionRichText_(data.history),
+      '現在の症状': toNotionRichText_(data.symptoms),
+      '同居家族': toNotionRichText_(data.family),
+      '患者メモ最終更新': { date: { start: todayIsoDate_() } }
+    };
+
+    callNotionApi_(`https://api.notion.com/v1/pages/${pageId}`, 'patch',
+      { properties: properties }, apiKey);
+
+    return { success: true, message: '患者情報を更新しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 他サービス利用予定を1件作る。
+ * 表示用のタイトル「訪問介護 火 10:00」はここで組み立てる。
+ */
+function createServicePlan(data) {
+  try {
+    const apiKey = getNotionApiKey_(data);
+    const patientId = data.patientId;
+
+    if (!patientId) {
+      throw new Error('患者が指定されていません');
+    }
+
+    const service = pickAllowedValue_(data.service, SERVICE_PLAN_TYPES);
+    if (!service) {
+      throw new Error('サービス種別を選んでください');
+    }
+
+    const days = SERVICE_PLAN_DAYS.filter(function (name) {
+      return (data.days || []).indexOf(name) !== -1;
+    });
+    const band = pickAllowedValue_(data.band, SERVICE_PLAN_BANDS);
+    const frequency = pickAllowedValue_(data.frequency, SERVICE_PLAN_FREQUENCIES);
+
+    // 時刻は「時刻指定」のときだけ持たせる
+    const startTime = band === '時刻指定' ? String(data.startTime || '').trim() : '';
+    const endTime = band === '時刻指定' ? String(data.endTime || '').trim() : '';
+
+    const titleParts = [service];
+    if (days.length) titleParts.push(days.join('・'));
+    if (startTime) {
+      titleParts.push(startTime);
+    } else if (band) {
+      titleParts.push(band);
+    }
+
+    const properties = {
+      '予定': { title: [{ text: { content: titleParts.join(' ') } }] },
+      '患者': { relation: [{ id: patientId }] },
+      'サービス種別': { select: { name: service } },
+      '事業所名': toNotionRichText_(data.office),
+      '曜日': {
+        multi_select: days.map(function (name) {
+          return { name: name };
+        })
+      },
+      '開始時刻': toNotionRichText_(startTime),
+      '終了時刻': toNotionRichText_(endTime),
+      '備考': toNotionRichText_(data.note),
+      '登録者': toNotionRichText_(data.staff),
+      '登録日': { date: { start: todayIsoDate_() } }
+    };
+
+    // セレクトは空の名前を送れないので、選ばれた時だけ入れる
+    if (band) properties['時間帯'] = { select: { name: band } };
+    if (frequency) properties['頻度'] = { select: { name: frequency } };
+
+    const result = callNotionApi_('https://api.notion.com/v1/pages', 'post', {
+      parent: { database_id: SERVICE_PLAN_DB_ID },
+      properties: properties
+    }, apiKey);
+
+    return { success: true, id: result.id, message: '他サービスの予定を登録しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 他サービス利用予定を消す（Notionの流儀に合わせてアーカイブする）
+ */
+function deleteServicePlan(data) {
+  try {
+    const apiKey = getNotionApiKey_(data);
+    const pageId = data.planId;
+
+    if (!pageId) {
+      throw new Error('削除する予定が指定されていません');
+    }
+
+    callNotionApi_(`https://api.notion.com/v1/pages/${pageId}`, 'patch',
+      { archived: true }, apiKey);
+
+    return { success: true, message: '他サービスの予定を削除しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// =============================================
+// 指示チェックリスト（オーナー → スタッフ）
+// =============================================
+
+/**
+ * 指示シートを取得（無ければヘッダー付きで作る）。施術録シートと同じ要領。
+ */
+function getOrCreateInstructionSheet() {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAMES.INSTRUCTION);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.INSTRUCTION);
+    sheet.appendRow(INSTRUCTION_HEADERS);
+    sheet.getRange(1, 1, 1, INSTRUCTION_HEADERS.length)
+      .setFontWeight('bold').setBackground('#FF9800').setFontColor('#FFFFFF');
+
+    // 日付列は文字列扱いにして YYYY-MM-DD のまま残るようにする
+    [INSTRUCTION_HEADERS.indexOf('作成日') + 1,
+    INSTRUCTION_HEADERS.indexOf('期限') + 1,
+    INSTRUCTION_DONE_AT_COLUMN].forEach(function (column) {
+      sheet.getRange(1, column, sheet.getMaxRows(), 1).setNumberFormat('@');
+    });
+  }
+
+  return sheet;
+}
+
+/**
+ * 指示シートの1行をアプリ側の形にする
+ */
+function toInstructionRecord_(row) {
+  return {
+    id: String(row[INSTRUCTION_HEADERS.indexOf('ID')] || ''),
+    createdAt: toIsoDateString(row[INSTRUCTION_HEADERS.indexOf('作成日')]),
+    target: String(row[INSTRUCTION_HEADERS.indexOf('宛先')] || ''),
+    content: String(row[INSTRUCTION_HEADERS.indexOf('内容')] || ''),
+    due: toIsoDateString(row[INSTRUCTION_HEADERS.indexOf('期限')]),
+    status: String(row[INSTRUCTION_HEADERS.indexOf('状態')] || ''),
+    doneBy: String(row[INSTRUCTION_DONE_BY_COLUMN - 1] || ''),
+    doneAt: toIsoDateString(row[INSTRUCTION_DONE_AT_COLUMN - 1])
+  };
+}
+
+/**
+ * 指示を取得する。
+ * data.target を渡すと、その人宛て＋全員宛てだけを返す（スタッフ端末用）。
+ * data.onlyPending が true なら未完了だけを返す。
+ */
+function getInstructions(data) {
+  try {
+    const sheet = getOrCreateInstructionSheet();
+    const values = sheet.getDataRange().getValues();
+    const target = String((data && data.target) || '').trim();
+    const onlyPending = !!(data && data.onlyPending);
+    const records = [];
+
+    for (let i = 1; i < values.length; i++) {
+      const record = toInstructionRecord_(values[i]);
+
+      // IDも内容も無い空行は飛ばす
+      if (!record.id && !record.content) continue;
+
+      if (target && record.target !== target && record.target !== INSTRUCTION_ALL_TARGET) {
+        continue;
+      }
+      if (onlyPending && record.status === INSTRUCTION_DONE) {
+        continue;
+      }
+
+      records.push(record);
+    }
+
+    return { success: true, data: records };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 指示を1件登録する（オーナーのみが使う想定）
+ */
+function saveInstruction(data) {
+  try {
+    const sheet = getOrCreateInstructionSheet();
+
+    const content = String(data.content || '').trim();
+    const target = String(data.target || '').trim();
+
+    if (!target) throw new Error('宛先を選んでください');
+    if (!content) throw new Error('指示の内容を入力してください');
+
+    const id = data.id || ('INS-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000));
+
+    const row = [];
+    row[INSTRUCTION_HEADERS.indexOf('ID')] = id;
+    row[INSTRUCTION_HEADERS.indexOf('作成日')] = toIsoDateString(data.createdAt) || todayIsoDate_();
+    row[INSTRUCTION_HEADERS.indexOf('宛先')] = target;
+    row[INSTRUCTION_HEADERS.indexOf('内容')] = content;
+    row[INSTRUCTION_HEADERS.indexOf('期限')] = toIsoDateString(data.due);
+    row[INSTRUCTION_HEADERS.indexOf('状態')] = '';
+    row[INSTRUCTION_DONE_BY_COLUMN - 1] = '';
+    row[INSTRUCTION_DONE_AT_COLUMN - 1] = '';
+
+    sheet.appendRow(row);
+
+    return { success: true, id: id, message: '指示を登録しました' };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 指示にチェックを付ける（状態＝完了）。誰がいつ消したかも残す。
+ */
+function completeInstruction(data) {
+  try {
+    const sheet = getOrCreateInstructionSheet();
+    const id = String(data.id || '').trim();
+
+    if (!id) throw new Error('指示IDが指定されていません');
+
+    const values = sheet.getDataRange().getValues();
+
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][INSTRUCTION_ID_COLUMN - 1] || '') !== id) continue;
+
+      const rowNumber = i + 1;
+      sheet.getRange(rowNumber, INSTRUCTION_STATUS_COLUMN).setValue(INSTRUCTION_DONE);
+      sheet.getRange(rowNumber, INSTRUCTION_DONE_BY_COLUMN).setValue(String(data.staff || ''));
+
+      const doneAt = sheet.getRange(rowNumber, INSTRUCTION_DONE_AT_COLUMN);
+      doneAt.setNumberFormat('@');
+      doneAt.setValue(todayIsoDate_());
+
+      return { success: true, message: '指示を完了にしました' };
+    }
+
+    throw new Error('指示が見つかりません');
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
 /**
  * スプレッドシート初期化（初回セットアップ用）
  * スクリプトエディタから手動実行
@@ -697,6 +1080,9 @@ function initializeSpreadsheet() {
   
   // 施術録シート（療養費の保険記録）
   getOrCreateOperationSheet();
+
+  // 指示シート（オーナーからスタッフへの指示チェックリスト）
+  getOrCreateInstructionSheet();
 
   // 担当者マスタシート
   let staffSheet = ss.getSheetByName(SHEET_NAMES.STAFF);

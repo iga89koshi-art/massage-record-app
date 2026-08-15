@@ -296,6 +296,188 @@ async function fetchVisitPlansFromNotion() {
     return plans;
 }
 
+// === 他サービス利用予定（Notion 他サービス利用予定データベース） ===
+
+// 院で固定のデータベース。設定画面には出さない（宛名ラベルのDBと同じ扱い）。
+const SERVICE_PLAN_DB_ID = 'a18e5630-a2bf-4d5d-a22c-8a1cdfdf227b';
+
+// 入力フォームの選択肢。Notion側のセレクトと同じ並び・同じ表記にする。
+const SERVICE_PLAN_TYPES = ['訪問介護', '訪問看護', 'デイサービス', 'デイケア', '訪問リハビリ',
+    '訪問入浴', '訪問診療', '福祉用具', 'ショートステイ', 'その他'];
+const SERVICE_PLAN_DAYS = ['月', '火', '水', '木', '金', '土', '日'];
+const SERVICE_PLAN_BANDS = ['午前', '午後', '終日', '時刻指定'];
+const SERVICE_PLAN_FREQUENCIES = ['毎週', '隔週', '月1回', '不定期'];
+// 「開始/終了時刻」を出すのはこの時間帯のときだけ
+const SERVICE_PLAN_EXACT_BAND = '時刻指定';
+
+/**
+ * 他サービス利用予定の1件を、画面で使う形に変換する。
+ * 患者はリレーションなので、取得済みの患者リストからIDで名前を引く。
+ */
+function toServicePlan(item, patientNameById) {
+    const props = item.properties || {};
+
+    const relations = (props['患者'] && props['患者'].relation) || [];
+    const patientIds = relations.map(r => normalizeNotionId(r.id));
+    const patientNames = relations
+        .map(r => patientNameById[normalizeNotionId(r.id)])
+        .filter(Boolean);
+
+    const service = props['サービス種別'] && props['サービス種別'].select
+        ? props['サービス種別'].select.name : '';
+    const band = props['時間帯'] && props['時間帯'].select
+        ? props['時間帯'].select.name : '';
+    const frequency = props['頻度'] && props['頻度'].select
+        ? props['頻度'].select.name : '';
+
+    // サービス種別も患者も無い行は使いようがないので捨てる
+    if (!service && patientIds.length === 0) return null;
+
+    return {
+        id: item.id,
+        patientIds: patientIds,
+        patientNames: patientNames,
+        service: service,
+        office: plainText(props['事業所名'] && props['事業所名'].rich_text),
+        days: multiSelectNames(props['曜日']),
+        band: band,
+        startTime: plainText(props['開始時刻'] && props['開始時刻'].rich_text),
+        endTime: plainText(props['終了時刻'] && props['終了時刻'].rich_text),
+        frequency: frequency,
+        note: plainText(props['備考'] && props['備考'].rich_text)
+    };
+}
+
+/**
+ * 他サービス利用予定を全件取得してキャッシュする。
+ * 訪問スケジュールの併記にも使うので、患者情報画面以外からも呼ばれる。
+ */
+async function fetchServicePlansFromNotion() {
+    const result = await callApiWithRetry(() =>
+        callGasApi('proxyNotionPatients', { apiKey: getNotionApiKey(), dbId: SERVICE_PLAN_DB_ID })
+    );
+
+    if (!result.success || !result.data) {
+        throw new Error('他サービス利用予定の取得に失敗しました');
+    }
+
+    const patientNameById = {};
+    getPatients().forEach(p => {
+        if (p.id) patientNameById[normalizeNotionId(p.id)] = p.name;
+    });
+
+    const plans = result.data
+        .map(item => toServicePlan(item, patientNameById))
+        .filter(Boolean);
+
+    saveServicePlans(plans);
+    return plans;
+}
+
+/**
+ * 患者DBのメモ欄（既往歴・現在の症状・同居家族）を書き戻す。
+ * 保存が通ったらキャッシュ側の患者も同じ内容にしておく（再取得を待たせない）。
+ */
+async function updatePatientNotesInNotion(patientId, notes) {
+    const result = await callApiWithRetry(() =>
+        callGasApi('updatePatientNotes', {
+            apiKey: getNotionApiKey(),
+            patientId: patientId,
+            history: notes.history || '',
+            symptoms: notes.symptoms || '',
+            family: notes.family || ''
+        }), 2
+    );
+
+    if (!result.success) {
+        throw new Error(result.error || '患者情報の保存に失敗しました');
+    }
+
+    const patients = getPatients();
+    const hit = patients.find(p => normalizeNotionId(p.id) === normalizeNotionId(patientId));
+    if (hit) {
+        hit.history = notes.history || '';
+        hit.symptoms = notes.symptoms || '';
+        hit.family = notes.family || '';
+        hit.notesUpdated = getToday();
+        savePatients(patients);
+    }
+
+    return result;
+}
+
+/**
+ * 他サービス利用予定を1件登録する
+ */
+async function createServicePlanInNotion(plan) {
+    const result = await callApiWithRetry(() =>
+        callGasApi('createServicePlan', Object.assign({ apiKey: getNotionApiKey() }, plan)), 2
+    );
+
+    if (!result.success) {
+        throw new Error(result.error || '他サービスの登録に失敗しました');
+    }
+
+    return result;
+}
+
+/**
+ * 他サービス利用予定を1件消す（Notion側はアーカイブ）
+ */
+async function deleteServicePlanInNotion(planId) {
+    const result = await callApiWithRetry(() =>
+        callGasApi('deleteServicePlan', { apiKey: getNotionApiKey(), planId: planId }), 2
+    );
+
+    if (!result.success) {
+        throw new Error(result.error || '他サービスの削除に失敗しました');
+    }
+
+    return result;
+}
+
+// === 指示チェックリスト（スプレッドシートの「指示」シート） ===
+
+/**
+ * 指示を取得する。target を渡すとその人宛て＋全員宛てだけが返る。
+ */
+async function fetchInstructionsFromGas(target, onlyPending) {
+    const result = await callApiWithRetry(() =>
+        callGasApi('getInstructions', { target: target || '', onlyPending: !!onlyPending }), 2
+    );
+
+    if (!result.success || !result.data) {
+        throw new Error('指示の取得に失敗しました');
+    }
+
+    saveInstructions(result.data);
+    return result.data;
+}
+
+async function saveInstructionToGas(instruction) {
+    const result = await callApiWithRetry(() =>
+        callGasApi('saveInstruction', instruction), 2
+    );
+
+    if (!result.success) {
+        throw new Error(result.error || '指示の登録に失敗しました');
+    }
+
+    return result;
+}
+
+async function completeInstructionInGas(id, staff) {
+    const result = await callApiWithRetry(() =>
+        callGasApi('completeInstruction', { id: id, staff: staff || '' }), 2
+    );
+
+    if (!result.success) {
+        throw new Error(result.error || '指示の更新に失敗しました');
+    }
+
+    return result;
+}
+
 // === 担当者マスタ ===
 
 async function fetchStaffFromGas() {
@@ -364,12 +546,20 @@ async function fetchPatientsFromNotion() {
             const baseParts = multiSelectNames(item.properties?.['基本施術部位']);
             const baseTreatments = multiSelectNames(item.properties?.['基本施術内容']);
 
+            // 4. 患者情報画面のメモ欄。患者リストと一緒に持たせておけば
+            //    画面を開いた時点で通信せずに出せる（保存時だけ書き戻す）。
+            const notesUpdated = item.properties?.['患者メモ最終更新']?.date?.start || '';
+
             return {
                 id: item.id,
                 name: name,
                 reading: reading,
                 baseParts: baseParts,
-                baseTreatments: baseTreatments
+                baseTreatments: baseTreatments,
+                history: plainText(item.properties?.['既往歴']?.rich_text),
+                symptoms: plainText(item.properties?.['現在の症状']?.rich_text),
+                family: plainText(item.properties?.['同居家族']?.rich_text),
+                notesUpdated: notesUpdated
             };
         });
 

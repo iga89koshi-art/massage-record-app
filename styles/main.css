@@ -216,6 +216,18 @@ body {
     color: white;
 }
 
+/* 患者情報 */
+.menu-btn.patient {
+    background: linear-gradient(135deg, #26A69A, #00695C);
+    color: white;
+}
+
+/* 指示 */
+.menu-btn.task {
+    background: linear-gradient(135deg, #9C27B0, #6A1B9A);
+    color: white;
+}
+
 /* フォーム */
 .input-form {
     background: var(--surface-color);
@@ -1029,6 +1041,16 @@ tbody tr:hover {
     word-break: break-word;
 }
 
+/* 訪問カードの下に併記する他サービス（スケジュールを組むときの制約） */
+.schedule-card-service {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #E65100;
+    word-break: break-word;
+}
+
 .schedule-empty {
     background: var(--surface-color);
     border: 1px dashed var(--border-color);
@@ -1399,4 +1421,143 @@ tbody tr:hover {
     .label-print-notice {
         display: none !important;
     }
+}
+
+/* ============================================================
+   患者情報：他サービス利用予定のカード
+   ============================================================ */
+.service-plan-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.service-plan-card {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--info-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+}
+
+.service-plan-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+}
+
+.service-plan-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.service-plan-detail {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.service-plan-note {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: 13px;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+/* ============================================================
+   指示チェックリスト
+   ホーム（スタッフ用端末）と指示画面（オーナー用）で同じカードを使う
+   ============================================================ */
+.home-instructions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.instruction-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.instruction-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid #9C27B0;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--spacing-md);
+}
+
+/* 完了したものは目立たせない（消えたのが分かればよい） */
+.instruction-card.is-done {
+    border-left-color: var(--border-color);
+    opacity: 0.6;
+}
+
+.instruction-card-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.instruction-content {
+    display: block;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.instruction-meta {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.instruction-due {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+/* 期限切れは赤く出す */
+.instruction-due.is-overdue {
+    color: var(--danger-color);
+}
+
+.instruction-done-btn {
+    flex-shrink: 0;
+    width: auto;
+    min-height: 44px;
+    padding: 10px var(--spacing-md);
+    font-size: 14px;
+}
+
+.instruction-status {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--warning-color);
+    text-align: right;
+}
+
+.instruction-status.is-done {
+    color: var(--secondary-color);
 }

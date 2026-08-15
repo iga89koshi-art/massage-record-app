@@ -17,6 +17,8 @@ const STORAGE_KEYS = {
     SALES_DRAFT: 'sales_draft',
     SCHEDULES: 'basic_schedules',
     VISIT_PLANS: 'visit_plans',
+    SERVICE_PLANS: 'service_plans',
+    INSTRUCTIONS: 'instructions',
     SCHEDULE_STAFF: 'schedule_staff',
     LABEL_TARGETS: 'label_targets',
     ROLE: 'device_role',
@@ -135,6 +137,38 @@ function saveVisitPlans(plans) {
 
 function getVisitPlans() {
     return getFromStorage(STORAGE_KEYS.VISIT_PLANS, []);
+}
+
+// === 他サービス利用予定（Notion 他サービス利用予定データベース） ===
+
+/**
+ * 1件の形：
+ * { id, patientIds: [...], patientNames: [...], service, office,
+ *   days: ['火',...], band, startTime, endTime, frequency, note }
+ * 訪問スケジュールの日表示で「その曜日に他サービスが入っているか」を
+ * 通信なしで引くために、患者情報画面と共通のキャッシュに置く。
+ */
+function saveServicePlans(plans) {
+    return saveToStorage(STORAGE_KEYS.SERVICE_PLANS, plans);
+}
+
+function getServicePlans() {
+    return getFromStorage(STORAGE_KEYS.SERVICE_PLANS, []);
+}
+
+// === 指示チェックリスト ===
+
+/**
+ * 1件の形：
+ * { id, createdAt, target, content, due, status, doneBy, doneAt }
+ * ホームを開いた瞬間に出したいので、取得済みの分はここに残しておく。
+ */
+function saveInstructions(list) {
+    return saveToStorage(STORAGE_KEYS.INSTRUCTIONS, list);
+}
+
+function getInstructionsCache() {
+    return getFromStorage(STORAGE_KEYS.INSTRUCTIONS, []);
 }
 
 /**
@@ -394,6 +428,8 @@ function clearCache() {
     removeFromStorage(STORAGE_KEYS.STAFF);
     removeFromStorage(STORAGE_KEYS.SCHEDULES);
     removeFromStorage(STORAGE_KEYS.VISIT_PLANS);
+    removeFromStorage(STORAGE_KEYS.SERVICE_PLANS);
+    removeFromStorage(STORAGE_KEYS.INSTRUCTIONS);
     removeFromStorage(STORAGE_KEYS.LABEL_TARGETS);
     showToast('キャッシュをクリアしました');
 }
