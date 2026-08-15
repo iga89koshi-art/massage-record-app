@@ -19,7 +19,11 @@ function collectShareableSettings() {
         gasApiUrl: getGasApiUrl(),
         gasScheduleUrl: getGasScheduleUrl(),
         salesPassword: getPassword(),
-        appToken: getAppToken()
+        appToken: getAppToken(),
+        // 端末の役割もコードに入れる。スタッフ用として作ったコードを読み込んだ端末は
+        // アプリ側から役割を変えられなくなる（applyShareableSettings で鍵をかける）。
+        role: getRole(),
+        staffName: getStaffName()
     };
 }
 
@@ -44,6 +48,15 @@ function applyShareableSettings(settings) {
     apply(settings.gasScheduleUrl, saveGasScheduleUrl);
     apply(settings.salesPassword, savePassword);
     apply(settings.appToken, saveAppToken);
+
+    // 役割は入っているときだけ触る。
+    // roleが無い古い設定コードを読んでも、今の端末の役割（既定はオーナー）のまま。
+    if (typeof settings.role === 'string' && settings.role) {
+        saveRole(settings.role);
+        apply(settings.staffName, saveStaffName);
+        // スタッフ用として配った端末では設定画面から役割を変えられなくする
+        saveRoleLocked(settings.role === ROLE_STAFF);
+    }
 }
 
 // === 文字列とバイト列の変換 ===

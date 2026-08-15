@@ -523,6 +523,17 @@ tbody tr:hover {
     line-height: 1.5;
 }
 
+/* 選ばせずに値だけ見せる欄（スタッフ用端末の担当者・施術者） */
+.fixed-value {
+    padding: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-color);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
 .config-panel {
     margin-top: var(--spacing-md);
     padding-top: var(--spacing-md);

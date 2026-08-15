@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=16">
+    <link rel="stylesheet" href="./styles/main.css?v=17">
 </head>
 
 <body>
@@ -77,11 +77,17 @@
                     <label for="treatment-date">日付</label>
                     <input type="date" id="treatment-date" class="form-control" required>
                 </div>
-                <div class="form-group">
+                <!-- スタッフ用端末では選択させず、下の固定表示に切り替える。
+                     保存処理はこのselectの値を見るので、隠しても要素は残す。 -->
+                <div class="form-group" id="treatment-staff-group">
                     <label for="treatment-staff">担当者 <span class="required">*</span></label>
                     <select id="treatment-staff" class="form-control" required>
                         <option value="">選択してください</option>
                     </select>
+                </div>
+                <div class="form-group hidden" id="treatment-staff-fixed-group">
+                    <label>担当者</label>
+                    <p id="treatment-staff-fixed" class="fixed-value"></p>
                 </div>
             </div>
 
@@ -159,6 +165,7 @@
                 <button id="tab-treatment" class="tab-btn active">施術記録</button>
                 <button id="tab-sales" class="tab-btn">営業記録</button>
             </div>
+            <p id="view-staff-note" class="section-note hidden">自分が担当する患者の記録だけを表示しています。</p>
             <!-- 施術記録タブ -->
             <div id="treatment-tab" class="tab-content active">
                 <div class="filter-section">
@@ -251,9 +258,14 @@
                     <button type="button" id="btn-schedule-next-day" class="schedule-day-btn"
                         aria-label="次の曜日">▶</button>
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="schedule-staff-group">
                     <label for="schedule-staff">施術者</label>
                     <select id="schedule-staff" class="form-control"></select>
+                </div>
+                <!-- スタッフ用端末では切替させず、自分の名前を出すだけにする -->
+                <div class="form-group hidden" id="schedule-staff-fixed-group">
+                    <label>施術者</label>
+                    <p id="schedule-staff-fixed" class="fixed-value"></p>
                 </div>
                 <div class="tabs schedule-tabs">
                     <button type="button" id="tab-schedule-day" class="tab-btn active">日</button>
@@ -342,7 +354,27 @@
             <header class="screen-header">
                 <h2>⚙️ 設定</h2>
             </header>
-            <div class="settings-section">
+            <!-- 端末の役割。スタッフ用として設定コードを読み込んだ端末では非表示になる -->
+            <div class="settings-section" id="settings-section-role">
+                <h3>この端末の役割</h3>
+                <p class="section-note">スタッフ用にすると、他の施術者の予定や担当外の患者が画面に出なくなります。
+                    設定コードにも役割が入るので、スタッフ用として配った端末では変更できません。</p>
+                <div class="form-group">
+                    <label for="setting-role">役割</label>
+                    <select id="setting-role" class="form-control">
+                        <option value="owner">オーナー用（すべて表示）</option>
+                        <option value="staff">スタッフ用（自分の担当のみ）</option>
+                    </select>
+                </div>
+                <div class="form-group hidden" id="setting-staff-name-group">
+                    <label for="setting-staff-name">施術者名</label>
+                    <select id="setting-staff-name" class="form-control">
+                        <option value="">選択してください</option>
+                    </select>
+                    <p class="section-note">訪問予定データベースの「施術担当者」と同じ名前を選んでください。</p>
+                </div>
+            </div>
+            <div class="settings-section" id="settings-section-notion">
                 <h3>Notion API設定</h3>
                 <div class="form-group">
                     <label for="setting-notion-api-key">Notion APIキー</label>
@@ -367,6 +399,8 @@
             </div>
             <div class="settings-section">
                 <h3>Google Apps Script設定</h3>
+                <!-- URLはオーナー用端末でだけ触らせる（スタッフ端末では合言葉だけ出す） -->
+                <div id="settings-gas-urls">
                 <div class="form-group">
                     <label for="setting-gas-spreadsheet-url">スプレッドシートURL</label>
                     <input type="url" id="setting-gas-spreadsheet-url" class="form-control"
@@ -382,6 +416,7 @@
                     <input type="url" id="setting-gas-schedule-url" class="form-control"
                         placeholder="https://script.google.com/macros/s/...">
                 </div>
+                </div>
                 <div class="form-group">
                     <label for="setting-app-token">バックエンド合言葉</label>
                     <input type="password" id="setting-app-token" class="form-control"
@@ -391,7 +426,7 @@
                 </div>
                 <button id="btn-test-gas" class="btn btn-info">接続テスト</button>
             </div>
-            <div class="settings-section">
+            <div class="settings-section" id="settings-section-password">
                 <h3>パスワード設定</h3>
                 <button id="btn-change-password" class="btn btn-warning">パスワード変更</button>
             </div>
@@ -450,12 +485,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=16"></script>
-    <script src="./js/storage.js?v=16"></script>
-    <script src="./js/config-share.js?v=16"></script>
-    <script src="./js/api.js?v=16"></script>
-    <script src="./js/ui.js?v=16"></script>
-    <script src="./js/app.js?v=16"></script>
+    <script src="./js/utils.js?v=17"></script>
+    <script src="./js/storage.js?v=17"></script>
+    <script src="./js/config-share.js?v=17"></script>
+    <script src="./js/api.js?v=17"></script>
+    <script src="./js/ui.js?v=17"></script>
+    <script src="./js/app.js?v=17"></script>
 </body>
 
 </html>

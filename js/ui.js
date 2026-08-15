@@ -12,10 +12,18 @@ let salesEntryCounter = 0;
 const OPERATION_PARTS = ['頸部', '肩部', '背部', '腰部', '上肢', '下肢'];
 const OPERATION_TREATMENTS = ['刺鍼', 'てい鍼', '電子温灸器'];
 
+// スタッフ用端末では開かせない画面（ホームのボタンも出さない）
+const OWNER_ONLY_SCREENS = ['sales', 'label-print'];
+
 /**
  * 画面遷移
  */
 function showScreen(screenId) {
+    // ボタンを隠すだけでなく、画面そのものにも入れないようにしておく
+    if (isStaffDevice() && OWNER_ONLY_SCREENS.indexOf(screenId) !== -1) {
+        screenId = 'home';
+    }
+
     document.querySelectorAll('.screen').forEach(screen => {
         screen.classList.remove('active');
     });
@@ -54,6 +62,120 @@ function initScreen(screenId) {
             initSettingsScreen();
             break;
     }
+}
+
+// =============================================
+// 端末の役割による表示の出し分け
+//
+// 役割の判定は storage.js の isStaffDevice()（中身は getRole()）だけを見る。
+// 画面ごとに条件を書き散らさず、出し入れはこの applyRoleToUi() にまとめる。
+// 将来サーバー側で権限を見るようにしたときも、直すのはここと storage.js だけで済む。
+//
+// これは暗号的な権限分離ではなく画面上の仕切り。合言葉は全端末共通なので、
+// 通信を直接叩けばデータは取れる（「目に入って諍いになる」のを防ぐのが目的）。
+// =============================================
+
+function toggleHidden(id, hidden) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !!hidden);
+}
+
+/**
+ * 今の役割に合わせて画面の要素を出し入れする。
+ * 起動時と、設定を保存したとき・設定コードを読み込んだ後に呼ぶ。
+ */
+function applyRoleToUi() {
+    const staffDevice = isStaffDevice();
+    const myName = getStaffName();
+    const nameLabel = myName || '（施術者名が未設定です）';
+
+    // ホーム：営業記録と宛名ラベルはスタッフ用端末には出さない
+    toggleHidden('btn-sales', staffDevice);
+    toggleHidden('btn-labels', staffDevice);
+
+    // 施術記録入力：担当者は自分に固定（selectは値を使うので隠すだけ）
+    toggleHidden('treatment-staff-group', staffDevice);
+    toggleHidden('treatment-staff-fixed-group', !staffDevice);
+    const treatmentFixed = document.getElementById('treatment-staff-fixed');
+    if (treatmentFixed) treatmentFixed.textContent = nameLabel;
+
+    // 訪問スケジュール：施術者の切替を出さない
+    toggleHidden('schedule-staff-group', staffDevice);
+    toggleHidden('schedule-staff-fixed-group', !staffDevice);
+    const scheduleFixed = document.getElementById('schedule-staff-fixed');
+    if (scheduleFixed) scheduleFixed.textContent = nameLabel;
+
+    // 記録閲覧：営業記録タブは出さない
+    toggleHidden('tab-sales', staffDevice);
+    toggleHidden('view-staff-note', !staffDevice);
+
+    // 設定：オーナー用の項目を隠す（残るのは合言葉と設定コードの読み込み）
+    toggleHidden('settings-section-notion', staffDevice);
+    toggleHidden('settings-gas-urls', staffDevice);
+    toggleHidden('btn-test-gas', staffDevice);
+    toggleHidden('settings-section-password', staffDevice);
+    toggleHidden('btn-export-config', staffDevice);
+    toggleHidden('btn-reset-all', staffDevice);
+    if (staffDevice) toggleHidden('config-export-panel', true);
+
+    // 役割の選択そのもの。スタッフ用として配った端末では触らせない
+    toggleHidden('settings-section-role', !isRoleEditable());
+}
+
+/**
+ * この端末のスタッフが関わる患者名の一覧。
+ * 訪問予定データベース（getVisitPlans）で自分が施術担当者になっている予定の患者を集める。
+ * 兼務の患者は複数の担当者の予定に出るので、どちらの端末からも見える。
+ * 施術者名が未設定なら空（＝何も見えない）を返す。
+ */
+function getMyPatientNames() {
+    const me = getStaffName();
+    if (!me) return [];
+
+    const names = [];
+    getVisitPlans().forEach(plan => {
+        if (!plan || plan.staff !== me) return;
+        if (plan.type && plan.type !== 'treatment') return;
+
+        // 「佐藤精次 / 髙橋 伊三郎」のように1件に複数人入っていることがある
+        splitScheduleNames(plan.name).forEach(rawName => {
+            // 患者リストの表記に寄せる（一致しなければ予定の表記のまま持つ）
+            const name = findPatientByName(rawName) || String(rawName).trim();
+            if (name && names.indexOf(name) === -1) names.push(name);
+        });
+    });
+
+    return sortJapanese(names);
+}
+
+/**
+ * 突き合わせ用に正規化した「自分の患者」の一覧
+ */
+function getMyPatientKeys() {
+    return getMyPatientNames().map(normalizePatientName).filter(Boolean);
+}
+
+/**
+ * その患者名が「自分の患者」に当たるか。
+ * 患者名は「A / B」のように連結されていることがあるので分解して見る
+ * （1人でも自分の担当なら見せる）。
+ */
+function matchesMyPatients(name, myKeys) {
+    return splitScheduleNames(name).some(part => {
+        const key = normalizePatientName(part);
+        return key && myKeys.indexOf(key) !== -1;
+    });
+}
+
+/**
+ * 一覧（患者・施術記録）を、この端末で見てよいものだけに絞る。
+ * オーナー用端末ではそのまま返す。
+ */
+function filterByMyPatients(list, getName) {
+    if (!isStaffDevice()) return list;
+
+    const myKeys = getMyPatientKeys();
+    return (list || []).filter(item => matchesMyPatients(getName(item), myKeys));
 }
 
 // === ホーム画面 ===
@@ -188,10 +310,32 @@ function initTreatmentScreen() {
     if (document.querySelectorAll('#treatment-batch-list .batch-entry').length === 0) {
         addTreatmentEntry();
     }
+
+    // 一時保存に他人の名前が入っていても、スタッフ用端末では自分に戻す
+    applyFixedTreatmentStaff();
+}
+
+/**
+ * スタッフ用端末の担当者は自分で固定。
+ * （プルダウンは画面に出さないが、保存処理はこのselectの値を見る）
+ */
+function applyFixedTreatmentStaff() {
+    if (!isStaffDevice()) return;
+
+    const select = document.getElementById('treatment-staff');
+    if (select) select.value = getStaffName();
 }
 
 function populateTreatmentStaffSelect() {
     const select = document.getElementById('treatment-staff');
+
+    // スタッフ用端末は自分だけを入れて選べないようにする
+    if (isStaffDevice()) {
+        const me = escapeHtml(getStaffName());
+        select.innerHTML = `<option value="${me}">${me}</option>`;
+        return;
+    }
+
     const staff = getTreatmentStaff();
 
     select.innerHTML = '<option value="">選択してください</option>';
@@ -208,7 +352,8 @@ function populateTreatmentStaffSelect() {
  * 患者選択プルダウンのHTMLを生成
  */
 function createPatientSelectHtml(selectedValue) {
-    const patients = getPatients();
+    // スタッフ用端末では自分が関わる患者だけを選べるようにする
+    const patients = filterByMyPatients(getPatients(), p => p.name);
     let html = '<option value="">選択してください</option>';
     patients.forEach(patient => {
         const selected = patient.name === selectedValue ? ' selected' : '';
@@ -1263,13 +1408,22 @@ async function refreshVisitPlans() {
  * 画面全体を描き直す（曜日・施術者・表示切替のどれが変わってもここを通す）
  */
 function renderScheduleScreen() {
-    const plans = getTreatmentVisitPlans();
-    const staffList = getScheduleStaffList(plans);
+    const staffDevice = isStaffDevice();
+    const myName = getStaffName();
+
+    // スタッフ用端末は自分の予定しか扱わない（他の施術者は候補にも出さない）
+    const allPlans = getTreatmentVisitPlans();
+    const plans = staffDevice
+        ? allPlans.filter(plan => plan.staff === myName)
+        : allPlans;
+    const staffList = staffDevice
+        ? (myName ? [myName] : [])
+        : getScheduleStaffList(plans);
     const select = document.getElementById('schedule-staff');
 
     // 選択中の施術者が予定から消えた場合も含めて選び直す
-    let staff = select.value;
-    if (!staff || staffList.indexOf(staff) === -1) {
+    let staff = staffDevice ? myName : select.value;
+    if (!staffDevice && (!staff || staffList.indexOf(staff) === -1)) {
         staff = getDefaultScheduleStaff(plans, staffList);
     }
 
@@ -1831,10 +1985,33 @@ function setupLabelScreen() {
 let currentViewTab = 'treatment';
 
 function initViewScreen() {
+    // 患者の絞り込み候補は開くたびに作り直す（訪問予定を取り直した後も追従させる）
+    populateViewPatientFilter();
     showViewTab('treatment');
 }
 
+/**
+ * 患者フィルタの選択肢。スタッフ用端末では自分が関わる患者だけ。
+ */
+function populateViewPatientFilter() {
+    const filterSelect = document.getElementById('filter-treatment-patient');
+    if (!filterSelect) return;
+
+    const patients = filterByMyPatients(getPatients(), p => p.name);
+
+    filterSelect.innerHTML = '<option value="all">全て</option>';
+    patients.forEach(p => {
+        const option = document.createElement('option');
+        option.value = p.name;
+        option.textContent = p.name;
+        filterSelect.appendChild(option);
+    });
+}
+
 function showViewTab(tab) {
+    // スタッフ用端末に営業記録は出さない
+    if (isStaffDevice() && tab === 'sales') tab = 'treatment';
+
     currentViewTab = tab;
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1893,6 +2070,9 @@ async function loadTreatmentRecords() {
 function displayTreatmentRecords(records) {
     const tbody = document.getElementById('treatment-records-body');
     tbody.innerHTML = '';
+
+    // スタッフ用端末では自分が関わる患者の記録だけにする
+    records = filterByMyPatients(records, r => r.patientName);
 
     if (records.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">データがありません</td></tr>';
@@ -1966,15 +2146,7 @@ function setupViewScreen() {
         showScreen('home');
     });
 
-    const filterSelect = document.getElementById('filter-treatment-patient');
-    const patients = getPatients();
-    filterSelect.innerHTML = '<option value="all">全て</option>';
-    patients.forEach(p => {
-        const option = document.createElement('option');
-        option.value = p.name;
-        option.textContent = p.name;
-        filterSelect.appendChild(option);
-    });
+    populateViewPatientFilter();
 }
 
 // =============================================
@@ -1990,7 +2162,73 @@ function initSettingsScreen() {
     document.getElementById('setting-gas-api-url').value = getGasApiUrl();
     document.getElementById('setting-gas-schedule-url').value = getGasScheduleUrl();
     document.getElementById('setting-app-token').value = getAppToken();
+    populateRoleSettings();
+    applyRoleToUi();
     updateSyncBadge();
+}
+
+/**
+ * 「この端末の役割」の選択と施術者名プルダウンを今の設定に合わせる。
+ * 施術者名は担当者マスタ（getStaff）から出す。
+ */
+function populateRoleSettings() {
+    const roleSelect = document.getElementById('setting-role');
+    const nameSelect = document.getElementById('setting-staff-name');
+    if (!roleSelect || !nameSelect) return;
+
+    roleSelect.value = getRole();
+
+    const current = getStaffName();
+    const names = getStaff().map(s => s && s.name).filter(Boolean);
+    // マスタから消えた人が設定されている場合も、選択が飛ばないように残す
+    if (current && names.indexOf(current) === -1) names.push(current);
+
+    nameSelect.innerHTML = '<option value="">選択してください</option>' +
+        names.map(name => {
+            const label = escapeHtml(name);
+            return `<option value="${label}">${label}</option>`;
+        }).join('');
+    nameSelect.value = current;
+
+    toggleHidden('setting-staff-name-group', roleSelect.value !== ROLE_STAFF);
+}
+
+/**
+ * 役割を切り替えたときに施術者名の欄を出し入れする（保存はまだしない）
+ */
+function onRoleSelectChange() {
+    const roleSelect = document.getElementById('setting-role');
+    toggleHidden('setting-staff-name-group', roleSelect.value !== ROLE_STAFF);
+}
+
+/**
+ * 役割の保存。スタッフ用として配られた端末では何もしない。
+ * 保存してよければ true、入力が足りない・取り消された場合は false を返す。
+ */
+function saveRoleSetting() {
+    if (!isRoleEditable()) return true;
+
+    const role = document.getElementById('setting-role').value;
+    const staffName = document.getElementById('setting-staff-name').value;
+
+    if (role === ROLE_STAFF && !staffName) {
+        showError('スタッフ用にするには施術者名を選んでください');
+        return false;
+    }
+
+    if (role === ROLE_STAFF && !isStaffDevice()) {
+        const message = `この端末を「${staffName}」のスタッフ用にします。\n`
+            + '他の施術者の予定・担当外の患者・営業記録・宛名ラベルは表示されなくなります。\n'
+            + 'よろしいですか？';
+        if (!window.confirm(message)) return false;
+    }
+
+    saveRole(role);
+    saveStaffName(role === ROLE_STAFF ? staffName : '');
+    // 手元で切り替えただけの端末は後から戻せるようにしておく
+    // （スタッフ用の設定コードを読み込んだ端末は戻せない）
+    saveRoleLocked(false);
+    return true;
 }
 
 function saveSettings() {
@@ -2003,6 +2241,9 @@ function saveSettings() {
     const gasScheduleUrl = document.getElementById('setting-gas-schedule-url').value;
     const appToken = document.getElementById('setting-app-token').value;
 
+    // 役割の保存は他の設定より先に確認する（取り消されたら何も保存しない）
+    if (!saveRoleSetting()) return;
+
     saveNotionApiKey(notionApiKey);
     saveNotionPatientDb(notionPatientDb);
     saveNotionVisitPlanDb(notionVisitPlanDb);
@@ -2011,6 +2252,10 @@ function saveSettings() {
     saveGasApiUrl(gasApiUrl);
     saveGasScheduleUrl(gasScheduleUrl);
     saveAppToken(appToken);
+
+    // 役割が変わっていれば画面の出し分けをその場で反映する
+    applyRoleToUi();
+    populateRoleSettings();
 
     showToast('設定を保存しました');
 }
@@ -2261,6 +2506,7 @@ function setupSettingsScreen() {
     document.getElementById('btn-clear-cache').addEventListener('click', clearCacheData);
     document.getElementById('btn-reset-all').addEventListener('click', resetAllData);
     document.getElementById('btn-settings-sync-now').addEventListener('click', manualSyncNow);
+    document.getElementById('setting-role').addEventListener('change', onRoleSelectChange);
     document.getElementById('btn-export-config').addEventListener('click', exportConfig);
     document.getElementById('btn-copy-config-code').addEventListener('click', copyConfigCode);
     document.getElementById('btn-copy-config-link').addEventListener('click', copyConfigLink);
@@ -2286,4 +2532,7 @@ function initUI() {
     setupSalesScreen();
     setupViewScreen();
     setupSettingsScreen();
+
+    // 役割による表示の出し分け（未設定の端末はオーナー扱いなので今まで通り）
+    applyRoleToUi();
 }

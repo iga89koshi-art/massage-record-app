@@ -18,8 +18,16 @@ const STORAGE_KEYS = {
     SCHEDULES: 'basic_schedules',
     VISIT_PLANS: 'visit_plans',
     SCHEDULE_STAFF: 'schedule_staff',
-    LABEL_TARGETS: 'label_targets'
+    LABEL_TARGETS: 'label_targets',
+    ROLE: 'device_role',
+    STAFF_NAME: 'device_staff_name',
+    ROLE_LOCKED: 'device_role_locked'
 };
+
+// この端末の役割。'owner' は今まで通り全部見える端末、
+// 'staff' は自分の担当分だけが見える端末。
+const ROLE_OWNER = 'owner';
+const ROLE_STAFF = 'staff';
 
 /**
  * localStorage保存
@@ -161,6 +169,69 @@ function getLabelTargets() {
         careManager: saved.careManager || [],
         patient: saved.patient || []
     };
+}
+
+// === 端末の役割（オーナー／スタッフ） ===
+//
+// 役割の判定はこの getRole() / isStaffDevice() に集約する。
+// 画面側で localStorage を直接見たり 'staff' の文字列を比べたりしないこと
+// （将来サーバー側で権限を見るようにしたとき、直す場所をここだけにするため）。
+
+/**
+ * 役割を保存する。'staff' 以外は全てオーナー扱いにする。
+ */
+function saveRole(role) {
+    return saveToStorage(STORAGE_KEYS.ROLE, role === ROLE_STAFF ? ROLE_STAFF : ROLE_OWNER);
+}
+
+/**
+ * この端末の役割。未設定の端末（今まで使っていた端末や、
+ * roleが入っていない古い設定コードを読んだ端末）は必ずオーナー扱いにする。
+ */
+function getRole() {
+    const saved = getFromStorage(STORAGE_KEYS.ROLE, ROLE_OWNER);
+    return saved === ROLE_STAFF ? ROLE_STAFF : ROLE_OWNER;
+}
+
+/**
+ * スタッフ用端末かどうか。表示の出し分けは全てこれを使う。
+ */
+function isStaffDevice() {
+    return getRole() === ROLE_STAFF;
+}
+
+/**
+ * スタッフ用端末のときの施術者名（訪問予定DBの「施術担当者」と同じ表記）
+ */
+function saveStaffName(name) {
+    return saveToStorage(STORAGE_KEYS.STAFF_NAME, String(name || ''));
+}
+
+function getStaffName() {
+    return getFromStorage(STORAGE_KEYS.STAFF_NAME, '') || '';
+}
+
+/**
+ * 役割が設定コード経由で入ったかどうか。
+ * 配布された端末（スタッフ用のコードを読み込んだ端末）では
+ * 設定画面から役割を変えられないようにするための鍵。
+ * オーナーが自分の端末で手動で切り替えた場合は鍵をかけない（戻せるように）。
+ */
+function saveRoleLocked(locked) {
+    return saveToStorage(STORAGE_KEYS.ROLE_LOCKED, !!locked);
+}
+
+function isRoleLocked() {
+    return getFromStorage(STORAGE_KEYS.ROLE_LOCKED, false) === true;
+}
+
+/**
+ * 設定画面に「役割」の選択を出してよいか。
+ * オーナー端末なら常に出す。スタッフ端末でも、手動で切り替えただけの
+ * 端末（＝オーナー本人の端末）なら戻せるように出す。
+ */
+function isRoleEditable() {
+    return !isStaffDevice() || !isRoleLocked();
 }
 
 // === パスワード ===
