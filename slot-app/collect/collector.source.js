@@ -308,6 +308,12 @@
     });
     var dm = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
     if (dm) h.postDate = ('0' + dm[1]).slice(-2) + '-' + ('0' + dm[2]).slice(-2);
+    // 構造パターン: 「8台以上機種に1/2」「3台並び」「全台系/全🌈」
+    var pm;
+    if ((pm = text.match(/(\d+)台以上[^\n]*1\/2/))) h.half = parseInt(pm[1], 10);
+    else if (/1\/2/.test(text)) h.half = 0;
+    if ((pm = text.match(/(\d+)台並び/))) h.run = parseInt(pm[1], 10);
+    if (/全台系|全🌈|全系|全台/.test(text)) h.zentai = true;
     return h;
   }
 
@@ -323,6 +329,9 @@
           merged.suffix = merged.suffix.concat(rh.suffix || []);
           merged.kishu = merged.kishu.concat(rh.kishu || []);
           (rh.ranges || []).forEach(function (r) { merged.ranges = (merged.ranges || []).concat([r]); });
+          if (rh.half != null) merged.half = rh.half;
+          if (rh.run) merged.run = rh.run;
+          if (rh.zentai) merged.zentai = true;
           if (rh.note) merged.notes.push(rh.note);
           has = true;
         }
@@ -335,7 +344,12 @@
         merged.daiban = merged.daiban.concat(ph.daiban);
         merged.suffix = merged.suffix.concat(ph.suffix);
         merged.kishu = merged.kishu.concat(ph.kishu);
-        merged.notes.push('貼付ポスト解読: ' + (ph.kishu.join('/') || 'キーワードなし'));
+        if (ph.half != null) merged.half = ph.half;
+        if (ph.run) merged.run = ph.run;
+        if (ph.zentai) merged.zentai = true;
+        merged.notes.push('貼付ポスト解読: ' + (ph.kishu.join('/') || 'キーワードなし') +
+          (ph.half != null ? ' [1/2配分' + (ph.half ? ':' + ph.half + '台以上機種' : '') + ']' : '') +
+          (ph.run ? ' [' + ph.run + '台並び]' : '') + (ph.zentai ? ' [全台系]' : ''));
         if (ph.postDate && date.slice(5) !== ph.postDate) {
           merged.dateWarn = '⚠ポスト内日付(' + ph.postDate + ')が今日と違います';
         }
@@ -373,11 +387,114 @@
     });
   }
 
+  // 好調判定: ジャグラーは高設定確率40%以上、AT機は初当りz値1.0以上
+  function isGood(m, scores) {
+    var s = scores[m.daiban];
+    if (!s) return false;
+    return s.kind === 'p' ? s.p56 >= 0.4 : s.z >= 1.0;
+  }
+
+  // 機種別サマリー: 全台系・1/2配分の検出用
+  function renderKishuSummary(machines, scores, hints) {
+    var groups = {};
+    machines.forEach(function (m) {
+      if (m.totalStart == null) return;
+      var g = (groups[m.kishuNo + '_' + m.kashitama] = groups[m.kishuNo + '_' + m.kashitama] || { name: m.kishuName, ms: [] });
+      g.ms.push(m);
+    });
+    var rows = [];
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k];
+      if (g.ms.length < 3) return;
+      var good = g.ms.filter(function (m) { return isGood(m, scores); });
+      var sumHits = 0, sumG = 0;
+      g.ms.forEach(function (m) { sumHits += firstHits(m); sumG += m.totalStart; });
+      var spec = SPECS[g.name];
+      var pooled = '';
+      if (spec) {
+        var agg = { bb: 0, rb: 0, totalStart: 0 };
+        g.ms.forEach(function (m) { agg.bb += m.bb || 0; agg.rb += m.rb || 0; agg.totalStart += m.totalStart; });
+        pooled = ' 機種全体高設定' + Math.round(posterior56(agg, spec).p56 * 100) + '%';
+      } else if (sumHits) {
+        pooled = ' 初当り合算1/' + Math.round(sumG / sumHits);
+      }
+      var ratio = good.length / g.ms.length;
+      var marks = [];
+      if (ratio >= 0.7 && g.ms.length >= 3) marks.push('★全台系?');
+      if (hints && hints.half != null && g.ms.length >= (hints.half || 0) && ratio >= 0.35 && ratio < 0.7) marks.push('☆1/2候補');
+      rows.push({
+        name: g.name, n: g.ms.length, good: good.length, ratio: ratio, pooled: pooled, marks: marks,
+        goodDaiban: good.map(function (m) { return m.daiban; })
+      });
+    });
+    rows.sort(function (a, b) { return b.ratio - a.ratio || b.n - a.n; });
+    logStrong('== 機種別サマリー(全台系・1/2配分の検出) ==', '#fa0');
+    rows.filter(function (r) { return r.good > 0; }).slice(0, 12).forEach(function (r) {
+      logStrong('　' + (r.marks.join('') || '　') + ' ' + r.name.replace(/^(LB|L|S)/, '').slice(0, 14) +
+        ' ' + r.n + '台中 好調' + r.good + '台' + r.pooled +
+        (r.goodDaiban.length ? ' [' + r.goodDaiban.join(',') + ']' : ''), '#fa0');
+    });
+  }
+
+  // 並び検出: 隣接台番で好調が連続する箇所と「座り目候補」の提案
+  function renderRuns(machines, scores) {
+    var byKishu = {};
+    machines.forEach(function (m) {
+      if (m.totalStart == null) return;
+      (byKishu[m.kishuNo + '_' + m.kashitama] = byKishu[m.kishuNo + '_' + m.kashitama] || []).push(m);
+    });
+    var lines = [];
+    Object.keys(byKishu).forEach(function (k) {
+      var ms = byKishu[k].sort(function (a, b) { return a.daiban - b.daiban; });
+      var byDai = {};
+      ms.forEach(function (m) { byDai[m.daiban] = m; });
+      // 好調台の連続(並び)
+      var run = [];
+      function flushRun() {
+        if (run.length >= 2) {
+          var name = run[0].kishuName.replace(/^(LB|L|S)/, '').slice(0, 12);
+          var neighbors = [];
+          var lo = run[0].daiban - 1, hi = run[run.length - 1].daiban + 1;
+          if (byDai[lo] && !isGood(byDai[lo], scores)) neighbors.push(lo);
+          if (byDai[hi] && !isGood(byDai[hi], scores)) neighbors.push(hi);
+          lines.push('　並び' + run.length + '台: ' + run.map(function (m) { return m.daiban; }).join('-') + ' ' + name +
+            (neighbors.length ? ' → 端の隣 台' + neighbors.join(',台') + ' も座り目候補' : ''));
+        }
+        run = [];
+      }
+      ms.forEach(function (m) {
+        if (isGood(m, scores)) {
+          if (run.length && m.daiban !== run[run.length - 1].daiban + 1) flushRun();
+          run.push(m);
+        } else {
+          flushRun();
+        }
+      });
+      flushRun();
+      // 好調2台に挟まれた台(1つ飛ばし)
+      ms.forEach(function (m) {
+        var a = byDai[m.daiban - 1], b = byDai[m.daiban + 1];
+        if (a && b && isGood(a, scores) && isGood(b, scores) && !isGood(m, scores)) {
+          lines.push('　挟まれ台: 台' + m.daiban + ' ' + m.kishuName.replace(/^(LB|L|S)/, '').slice(0, 12) +
+            ' (両隣' + a.daiban + '/' + b.daiban + 'が好調) → 座り目候補');
+        }
+      });
+    });
+    if (lines.length) {
+      logStrong('== 並び・座り目候補 ==', '#6f6');
+      lines.forEach(function (l) { logStrong(l, '#6f6'); });
+    }
+  }
+
   async function refreshHintSection() {
     if (!lastMachines) return;
     var hints = await getMergedHints(today());
-    if (hints) renderHints(lastMachines, lastScores, hints);
-    else logStrong('(今日の日付のヒントがありません)', '#f9f');
+    if (hints) {
+      renderHints(lastMachines, lastScores, hints);
+      renderKishuSummary(lastMachines, lastScores, hints);
+    } else {
+      logStrong('(今日の日付のヒントがありません)', '#f9f');
+    }
   }
 
   hintBtn.onclick = function () {
@@ -516,6 +633,8 @@
     var hints = await getMergedHints(date);
     if (hints) renderHints(machines, lastScores, hints);
     renderRankings(machines, lastScores);
+    renderKishuSummary(machines, lastScores, hints);
+    renderRuns(machines, lastScores);
 
     var payload = JSON.stringify({
       ver: 1,
