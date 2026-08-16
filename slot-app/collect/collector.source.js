@@ -1,18 +1,15 @@
 /*
  * スロットデータ収集ブックマークレット(読みやすい版)
  * 店舗WiFi接続中に athink.jp のデータサイト上で実行すると、
- * 対象機種(既定:ジャグラー系)の全台を自動巡回して
- * BB/RB/確率/大当り履歴を取得し、GASへ送信する。
- * 実際に登録するのは collector.bookmarklet.txt の1行。
+ * スロット全機種の全台を自動巡回して BB/RB/確率/大当り履歴を取得し、
+ * その場で高設定候補ランキングを表示する。
+ * ブックマーク登録は loader.bookmarklet.txt (実行のたびに本ファイルの最新版を読む)。
  *
- * 仕組み(サイト解析結果):
- *  - 機種一覧:   ./php/back/show/kishu_list.php?tenpo_id=angyou&p=l&tkn=
- *      → tr.tr_kishu_list_class (data-kishu-no / data-kashitama_id / data-kishu_name)
- *  - 台一覧:     ./php/back/show/dai_list.self.php?page=N&tab=dai_list&...
- *      → .list_dedama 要素の data-daiban、ページャは .pagerclz4dailist / .pagerclz4slump
- *  - 台詳細:     ./php/back/show/dedama.php?tenpo_id=..&daiban=..&_date=..&kishu_no=..
- *      → #data_counter_s のLCD風表示(実数値は .overrideText 内の
- *        .shadowOpacity1/.shadowOpacity2 以外のspan)、#oatari_rireki の履歴表
+ * 機能:
+ *  - ジャグラー(スペック登録機種): 設定1〜6のベイズ事後確率で高設定確率を表示
+ *  - AT機など: 連チャンを一塊にした初当り確率を同機種内で比較(z値)
+ *  - ヒント貼付: 晒屋のXポストを貼ると解読し、該当台を実データと突き合わせ
+ *  - GAS未設定でも動作(結果JSONをコピーして持ち帰れる)
  */
 (async function () {
   if (window.__slotCollectorRunning) { alert('収集は既に実行中です'); return; }
@@ -27,6 +24,57 @@
     'SネオアイムジャグラーEX-KK': [[273.1, 439.8], [271.2, 399.6], [269.7, 331.0], [266.4, 315.1], [263.2, 292.6], [268.6, 268.6]]
   };
   var MIN_GAMES_RANK = 800;
+
+  // ヒント解読用: ポスト内キーワード → 機種名に含まれる文字列
+  var HINT_ALIASES = [
+    [/GOD|ゴッド/i, 'ミリオンゴッド'],
+    [/カバネリ/, 'カバネリ'],
+    [/マイジャグ/, 'マイジャグラー'],
+    [/ゴージャグ|ゴーゴージャグ/, 'ゴーゴージャグラー'],
+    [/アイムジャグ|ネオアイム/, 'アイムジャグラー'],
+    [/ファンキー/, 'ファンキージャグラー'],
+    [/ハッピージャグ/, 'ハッピージャグラー'],
+    [/ミスタージャグ/, 'ミスタージャグラー'],
+    [/ウルミラ|ウルトラミラクル/, 'ウルトラミラクルジャグラー'],
+    [/北斗/, '北斗'],
+    [/ヴァルヴレイヴ|ヴヴヴ/, 'ヴァルヴレイヴ'],
+    [/喰種|グール/, '喰種'],
+    [/モンキーターン/, 'モンキーターン'],
+    [/からくり/, 'からくりサーカス'],
+    [/バジリスク|絆/, 'バジリスク'],
+    [/沖ドキ/, '沖ドキ'],
+    [/吉宗|ヨシムネ/, '吉宗'],
+    [/番長/, '番長'],
+    [/乙女/, '乙女'],
+    [/モンハン|モンスターハンター/, 'モンスターハンター'],
+    [/カイジ/, 'カイジ'],
+    [/化物語/, '化物語'],
+    [/マギレコ|マギアレコード/, 'マギアレコード'],
+    [/とある/, 'とある'],
+    [/ディスクアップ|DISCUP/i, 'DISCUP'],
+    [/ストファイ|ストリートファイター|スト6/, 'ストリートファイター'],
+    [/ハナビ|花火/, 'ハナビ'],
+    [/チバリヨ/, 'チバリヨ'],
+    [/ヤバチバ/, 'ヤバチバ'],
+    [/南国/, '南国育ち'],
+    [/秘宝伝/, '秘宝伝'],
+    [/鏡|サラリーマン/, '鏡'],
+    [/かぐや/, 'かぐや様'],
+    [/リオ/, 'リオエース'],
+    [/東リベ|リベンジャーズ/, 'リベンジャーズ'],
+    [/SAO|ソードアート/i, 'ソードアート'],
+    [/ビッグドリーム/, 'ビッグドリーム'],
+    [/戦コレ|戦国コレクション/, '戦国コレクション'],
+    [/鬼武者/, '鬼武者']
+  ];
+  // メーカー名 → 該当機種キーワード(この店の設置機種ベース、要追加)
+  var HINT_MAKERS = {
+    'Sammy|サミー': ['北斗', 'カバネリ', 'DISCUP', 'ストリートファイター', 'ディスクアップ'],
+    '北電子': ['ジャグラー'],
+    'ユニバ|ユニバーサル': ['ミリオンゴッド', '沖ドキ', 'バジリスク', 'ハナビ', 'クランキー', 'バーサス', 'SHAMANKING'],
+    '大都': ['吉宗', 'ヨシムネ', '番長', '秘宝伝']
+  };
+
   var filterStr = localStorage.getItem('slot_kishu_filter') || '';
   var KISHU_FILTER = new RegExp(filterStr);
 
@@ -37,19 +85,36 @@
   }
 
   var aborted = false;
+  var lastMachines = null;
+  var lastScores = null;
+
   var box = document.createElement('div');
   box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.92);color:#0f0;font:12px/1.5 monospace;padding:10px;overflow:auto;';
-  var logDiv = document.createElement('div');
+  var topBar = document.createElement('div');
+  topBar.style.cssText = 'position:sticky;top:0;display:flex;gap:8px;justify-content:flex-end;';
+  var hintBtn = document.createElement('button');
+  hintBtn.textContent = 'ヒント貼付';
+  hintBtn.style.cssText = 'padding:10px 14px;font-size:14px;background:#63c;color:#fff;border:0;border-radius:6px;';
   var stopBtn = document.createElement('button');
   stopBtn.textContent = '中止/閉じる';
-  stopBtn.style.cssText = 'position:sticky;top:0;float:right;padding:10px 14px;font-size:14px;background:#c33;color:#fff;border:0;border-radius:6px;';
+  stopBtn.style.cssText = 'padding:10px 14px;font-size:14px;background:#c33;color:#fff;border:0;border-radius:6px;';
   stopBtn.onclick = function () { aborted = true; box.remove(); window.__slotCollectorRunning = false; };
-  box.appendChild(stopBtn);
+  var logDiv = document.createElement('div');
+  topBar.appendChild(hintBtn);
+  topBar.appendChild(stopBtn);
+  box.appendChild(topBar);
   box.appendChild(logDiv);
   document.body.appendChild(box);
+
   function log(msg) {
     var p = document.createElement('div');
     p.textContent = msg;
+    logDiv.appendChild(p);
+  }
+  function logStrong(msg, color) {
+    var p = document.createElement('div');
+    p.textContent = msg;
+    p.style.cssText = 'color:' + (color || '#ff0') + ';font-weight:bold;';
     logDiv.appendChild(p);
   }
 
@@ -68,7 +133,6 @@
     var m = String(s || '').match(/1\s*\/\s*(\d+)/);
     return m ? parseInt(m[1], 10) : null;
   }
-
   function today() {
     var el = document.getElementById('kishu_list_target_date');
     if (el && el.value) return el.value;
@@ -129,6 +193,8 @@
     logDiv.appendChild(ta);
   }
 
+  // ---- 分析 ----
+
   function posterior56(m, spec) {
     var n = m.totalStart;
     var lls = spec.map(function (st) {
@@ -143,55 +209,35 @@
     return { p56: p[4] + p[5], p456: p[3] + p[4] + p[5] };
   }
 
-  function logStrong(msg, color) {
-    var p = document.createElement('div');
-    p.textContent = msg;
-    p.style.cssText = 'color:' + (color || '#ff0') + ';font-weight:bold;';
-    logDiv.appendChild(p);
+  function firstHits(m) {
+    // 連チャン(33G以内の当選)を一塊=1初当りとして数える
+    if (!m.history || !m.history.length) return (m.bb || 0) + (m.rb || 0);
+    var hist = m.history.slice().sort(function (a, b) { return a.no - b.no; });
+    var hits = 0;
+    hist.forEach(function (h, idx) {
+      if (idx === 0 || h.start > 33) hits++;
+    });
+    return hits;
   }
 
-  function showAnalysis(machines) {
-    // 1) スペック登録済み機種(ジャグラー)はベイズ推定で高設定確率を出す
-    var jr = [];
+  // 台番 → スコア({kind:'p',p56,p456} または {kind:'z',z,hits,avgDen})
+  function computeScores(machines) {
+    var scores = {};
     machines.forEach(function (m) {
       var spec = SPECS[m.kishuName];
-      if (!spec || m.totalStart == null || m.totalStart < MIN_GAMES_RANK || m.bb == null || m.rb == null) return;
-      var r = posterior56(m, spec);
-      jr.push({ m: m, p56: r.p56, p456: r.p456 });
+      if (spec && m.totalStart != null && m.totalStart >= MIN_GAMES_RANK && m.bb != null && m.rb != null) {
+        var r = posterior56(m, spec);
+        scores[m.daiban] = { kind: 'p', p56: r.p56, p456: r.p456 };
+      }
     });
-    jr.sort(function (a, b) { return b.p56 - a.p56; });
-    logStrong('== ジャグラー 高設定候補(設5・6確率順 / ' + MIN_GAMES_RANK + 'G以上) ==');
-    jr.slice(0, 12).forEach(function (r, i) {
-      var m = r.m;
-      var mark = r.p56 >= 0.45 ? '★' : (r.p56 >= 0.3 ? '◯' : '　');
-      logStrong(mark + ' 台' + m.daiban + ' ' + m.kishuName.replace(/^S/, '').slice(0, 10) +
-        ' G' + m.totalStart + ' BB' + m.bb + ' RB' + m.rb +
-        ' 合成1/' + (m.gousei || '?') +
-        ' 高設定' + Math.round(r.p56 * 100) + '%(設4以上' + Math.round(r.p456 * 100) + '%)',
-        r.p56 >= 0.45 ? '#f66' : '#ff0');
-    });
-    if (!jr.length) logStrong('(対象データなし)');
-
-    // 2) スペック未登録機種(AT機など)は同機種内で初当りの引きを比較(ポアソンz値)
-    //    連チャン(33G以内の当選)は一塊=1初当りとして数える
     var groups = {};
     machines.forEach(function (m) {
       if (SPECS[m.kishuName]) return;
       if (m.totalStart == null || m.totalStart < MIN_GAMES_RANK) return;
-      var hits;
-      if (m.history && m.history.length) {
-        var hist = m.history.slice().sort(function (a, b) { return a.no - b.no; });
-        hits = 0;
-        hist.forEach(function (h, idx) {
-          if (idx === 0 || h.start > 33) hits++;
-        });
-      } else {
-        hits = (m.bb || 0) + (m.rb || 0);
-      }
+      var hits = firstHits(m);
       if (!hits) return;
       (groups[m.kishuNo] = groups[m.kishuNo] || []).push({ m: m, hits: hits });
     });
-    var at = [];
     Object.keys(groups).forEach(function (k) {
       var g = groups[k];
       if (g.length < 4) return;
@@ -200,59 +246,174 @@
       var pbar = sumH / sumG;
       g.forEach(function (x) {
         var exp = x.m.totalStart * pbar;
-        at.push({ m: x.m, hits: x.hits, z: (x.hits - exp) / Math.sqrt(exp), avgDen: Math.round(1 / pbar) });
+        scores[x.m.daiban] = { kind: 'z', z: (x.hits - exp) / Math.sqrt(exp), hits: x.hits, avgDen: Math.round(1 / pbar) };
       });
     });
-    at.sort(function (a, b) { return b.z - a.z; });
-    logStrong('== AT機など 同機種内で当たりが強い台(参考・スペック未登録) ==', '#0cf');
-    at.filter(function (x) { return x.z >= 1; }).slice(0, 10).forEach(function (x) {
-      var m = x.m;
-      logStrong('　台' + m.daiban + ' ' + m.kishuName.replace(/^(LB|L|S)/, '').slice(0, 12) +
-        ' G' + m.totalStart + ' 当り' + x.hits + '(1/' + Math.round(m.totalStart / x.hits) + ')' +
-        ' 機種平均1/' + x.avgDen + ' 優秀度+' + x.z.toFixed(1), '#0cf');
+    return scores;
+  }
+
+  function shortName(m) {
+    return m.kishuName.replace(/^(LB|L|S)/, '').slice(0, 12);
+  }
+  function scoreText(m, s) {
+    if (!s) return '';
+    if (s.kind === 'p') return ' 高設定' + Math.round(s.p56 * 100) + '%';
+    return ' 初当り' + s.hits + '(1/' + Math.round(m.totalStart / s.hits) + ') 機種平均1/' + s.avgDen + ' 優秀度' + (s.z >= 0 ? '+' : '') + s.z.toFixed(1);
+  }
+  function sortKey(s) {
+    if (!s) return -99;
+    return s.kind === 'p' ? s.p56 * 10 : s.z; // 高設定確率とz値をざっくり同スケール化
+  }
+
+  function renderRankings(machines, scores) {
+    var jr = machines.filter(function (m) { return scores[m.daiban] && scores[m.daiban].kind === 'p'; })
+      .sort(function (a, b) { return scores[b.daiban].p56 - scores[a.daiban].p56; });
+    logStrong('== ジャグラー 高設定候補(設5・6確率順 / ' + MIN_GAMES_RANK + 'G以上) ==');
+    jr.slice(0, 12).forEach(function (m) {
+      var s = scores[m.daiban];
+      var mark = s.p56 >= 0.45 ? '★' : (s.p56 >= 0.3 ? '◯' : '　');
+      logStrong(mark + ' 台' + m.daiban + ' ' + shortName(m) +
+        ' G' + m.totalStart + ' BB' + m.bb + ' RB' + m.rb + ' 合成1/' + (m.gousei || '?') +
+        ' 高設定' + Math.round(s.p56 * 100) + '%(設4以上' + Math.round(s.p456 * 100) + '%)',
+        s.p56 >= 0.45 ? '#f66' : '#ff0');
+    });
+    if (!jr.length) logStrong('(対象データなし)');
+
+    var at = machines.filter(function (m) { return scores[m.daiban] && scores[m.daiban].kind === 'z'; })
+      .sort(function (a, b) { return scores[b.daiban].z - scores[a.daiban].z; });
+    logStrong('== AT機など 同機種内で初当りが強い台(参考) ==', '#0cf');
+    at.filter(function (m) { return scores[m.daiban].z >= 1; }).slice(0, 10).forEach(function (m) {
+      logStrong('　台' + m.daiban + ' ' + shortName(m) + ' G' + m.totalStart + scoreText(m, scores[m.daiban]), '#0cf');
     });
   }
 
-  // 当日のヒント(晒屋情報など)をリポジトリから取得し、該当台を実データと突き合わせる
-  async function showHints(machines, date) {
-    var hints;
+  // ---- ヒント ----
+
+  function parseHintText(text) {
+    var h = { daiban: [], suffix: [], kishu: [], note: '' };
+    (text.match(/(\d{3,4})番台/g) || []).forEach(function (s) {
+      h.daiban.push(parseInt(s, 10));
+    });
+    var re = /末尾(\d)/g, sm;
+    while ((sm = re.exec(text))) h.suffix.push(parseInt(sm[1], 10));
+    HINT_ALIASES.forEach(function (a) {
+      if (a[0].test(text) && h.kishu.indexOf(a[1]) === -1) h.kishu.push(a[1]);
+    });
+    Object.keys(HINT_MAKERS).forEach(function (mk) {
+      if (new RegExp(mk, 'i').test(text)) {
+        HINT_MAKERS[mk].forEach(function (t) {
+          if (h.kishu.indexOf(t) === -1) h.kishu.push(t);
+        });
+      }
+    });
+    var dm = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+    if (dm) h.postDate = ('0' + dm[1]).slice(-2) + '-' + ('0' + dm[2]).slice(-2);
+    return h;
+  }
+
+  async function getMergedHints(date) {
+    var merged = { daiban: [], suffix: [], kishu: [], notes: [], dateWarn: '' };
+    var has = false;
     try {
       var hres = await fetch('https://raw.githubusercontent.com/iga89koshi-art/massage-record-app/claude/slot-high-setting-detector-r1fcf4/slot-app/collect/hints.json', { cache: 'no-store' });
-      if (!hres.ok) return;
-      hints = await hres.json();
-    } catch (e) { return; }
-    if (!hints || hints.date !== date) return;
+      if (hres.ok) {
+        var rh = await hres.json();
+        if (rh && rh.date === date) {
+          merged.daiban = merged.daiban.concat(rh.daiban || []);
+          merged.suffix = merged.suffix.concat(rh.suffix || []);
+          merged.kishu = merged.kishu.concat(rh.kishu || []);
+          (rh.ranges || []).forEach(function (r) { merged.ranges = (merged.ranges || []).concat([r]); });
+          if (rh.note) merged.notes.push(rh.note);
+          has = true;
+        }
+      }
+    } catch (e) { }
+    try {
+      var stored = JSON.parse(localStorage.getItem('slot_hint') || 'null');
+      if (stored && stored.date === date && stored.text) {
+        var ph = parseHintText(stored.text);
+        merged.daiban = merged.daiban.concat(ph.daiban);
+        merged.suffix = merged.suffix.concat(ph.suffix);
+        merged.kishu = merged.kishu.concat(ph.kishu);
+        merged.notes.push('貼付ポスト解読: ' + (ph.kishu.join('/') || 'キーワードなし'));
+        if (ph.postDate && date.slice(5) !== ph.postDate) {
+          merged.dateWarn = '⚠ポスト内日付(' + ph.postDate + ')が今日と違います';
+        }
+        has = true;
+      }
+    } catch (e) { }
+    return has ? merged : null;
+  }
 
-    function matches(m) {
+  function renderHints(machines, scores, hints) {
+    logStrong('== 本日のヒント該当台 × 実データ ==', '#f9f');
+    hints.notes.forEach(function (n) { logStrong('　' + n, '#f9f'); });
+    if (hints.dateWarn) logStrong('　' + hints.dateWarn, '#f66');
+    var matched = [];
+    machines.forEach(function (m) {
+      if (m.totalStart == null) return;
       var reasons = [];
-      if ((hints.daiban || []).indexOf(m.daiban) !== -1) reasons.push('指名台');
-      if ((hints.suffix || []).indexOf(m.daiban % 10) !== -1) reasons.push('末尾' + (m.daiban % 10));
-      (hints.kishu || []).forEach(function (kw) {
-        if (m.kishuName.indexOf(kw) !== -1) reasons.push('機種:' + kw);
+      if (hints.daiban.indexOf(m.daiban) !== -1) reasons.push('指名台');
+      if (hints.suffix.indexOf(m.daiban % 10) !== -1) reasons.push('末尾' + (m.daiban % 10));
+      hints.kishu.forEach(function (kw) {
+        if (m.kishuName.indexOf(kw) !== -1) reasons.push(kw);
       });
       (hints.ranges || []).forEach(function (r) {
         if (m.daiban >= r[0] && m.daiban <= r[1]) reasons.push('島' + r[0] + '-' + r[1]);
       });
-      return reasons;
-    }
-
-    logStrong('== 本日のヒント該当台 × 実データ (' + (hints.note || '') + ') ==', '#f9f');
-    var hit = 0;
-    machines.forEach(function (m) {
-      var reasons = matches(m);
-      if (!reasons.length || m.totalStart == null) return;
-      hit++;
-      var extra = '';
-      var spec = SPECS[m.kishuName];
-      if (spec && m.totalStart >= MIN_GAMES_RANK && m.bb != null && m.rb != null) {
-        extra = ' 高設定' + Math.round(posterior56(m, spec).p56 * 100) + '%';
-      }
-      logStrong('　台' + m.daiban + ' ' + m.kishuName.replace(/^(LB|L|S)/, '').slice(0, 12) +
-        ' G' + m.totalStart + ' 合成1/' + (m.gousei || '?') + extra +
-        ' [' + reasons.join(',') + ']', '#f9f');
+      if (reasons.length) matched.push({ m: m, reasons: reasons });
     });
-    if (!hit) logStrong('　(該当台なし)', '#f9f');
+    matched.sort(function (a, b) { return sortKey(scores[b.m.daiban]) - sortKey(scores[a.m.daiban]); });
+    logStrong('　該当' + matched.length + '台(挙動が良い順に最大20台表示)', '#f9f');
+    matched.slice(0, 20).forEach(function (x) {
+      var m = x.m;
+      logStrong('　台' + m.daiban + ' ' + shortName(m) + ' G' + m.totalStart +
+        ' 合成1/' + (m.gousei || '?') + scoreText(m, scores[m.daiban]) +
+        ' [' + x.reasons.join(',') + ']', '#f9f');
+    });
   }
+
+  async function refreshHintSection() {
+    if (!lastMachines) return;
+    var hints = await getMergedHints(today());
+    if (hints) renderHints(lastMachines, lastScores, hints);
+    else logStrong('(今日の日付のヒントがありません)', '#f9f');
+  }
+
+  hintBtn.onclick = function () {
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.95);padding:12px;display:flex;flex-direction:column;gap:8px;';
+    var label = document.createElement('div');
+    label.textContent = '晒屋のポストを貼り付けてください(今日の分)';
+    label.style.cssText = 'color:#fff;font-size:14px;';
+    var ta = document.createElement('textarea');
+    ta.style.cssText = 'flex:1;width:100%;font-size:14px;background:#111;color:#fff;border:1px solid #666;';
+    try {
+      var stored = JSON.parse(localStorage.getItem('slot_hint') || 'null');
+      if (stored && stored.date === today()) ta.value = stored.text;
+    } catch (e) { }
+    var save = document.createElement('button');
+    save.textContent = '保存して解読';
+    save.style.cssText = 'padding:14px;font-size:15px;background:#2b6;color:#fff;border:0;border-radius:6px;';
+    var close = document.createElement('button');
+    close.textContent = '閉じる';
+    close.style.cssText = 'padding:10px;font-size:14px;background:#555;color:#fff;border:0;border-radius:6px;';
+    save.onclick = function () {
+      localStorage.setItem('slot_hint', JSON.stringify({ date: today(), text: ta.value }));
+      modal.remove();
+      var ph = parseHintText(ta.value);
+      logStrong('ヒント保存: 機種[' + ph.kishu.join('/') + '] 台番[' + ph.daiban.join(',') + '] 末尾[' + ph.suffix.join(',') + ']', '#f9f');
+      refreshHintSection();
+    };
+    close.onclick = function () { modal.remove(); };
+    modal.appendChild(label);
+    modal.appendChild(ta);
+    modal.appendChild(save);
+    modal.appendChild(close);
+    document.body.appendChild(modal);
+  };
+
+  // ---- メイン ----
 
   try {
     var date = today();
@@ -348,8 +509,14 @@
       }
     }
 
-    await showHints(machines, date);
-    showAnalysis(machines);
+    log('== 取得完了: ' + machines.length + '台 ==');
+    lastMachines = machines;
+    lastScores = computeScores(machines);
+
+    var hints = await getMergedHints(date);
+    if (hints) renderHints(machines, lastScores, hints);
+    renderRankings(machines, lastScores);
+
     var payload = JSON.stringify({
       ver: 1,
       action: 'collect',
@@ -359,7 +526,7 @@
       machines: machines
     });
     if (gasUrl) {
-      log('== 取得完了: ' + machines.length + '台。GASへ送信中... ==');
+      log('GASへ送信中...');
       try {
         var res = await fetch(gasUrl, {
           method: 'POST',
@@ -380,7 +547,7 @@
         }
       }
     } else {
-      log('== 取得完了: ' + machines.length + '台。GAS未設定のためコピー画面を表示します ==');
+      log('GAS未設定のためコピー画面を表示します');
       showJsonCopy(payload);
     }
     log('== 完了。「中止/閉じる」で閉じてください ==');
