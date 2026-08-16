@@ -20,14 +20,13 @@
 
   var TENPO = 'angyou';
   var THROTTLE_MS = 200;
-  var filterStr = localStorage.getItem('slot_kishu_filter') || 'ジャグラー';
+  var filterStr = localStorage.getItem('slot_kishu_filter') || '';
   var KISHU_FILTER = new RegExp(filterStr);
 
   var gasUrl = localStorage.getItem('slot_gas_url') || '';
   if (!gasUrl) {
-    gasUrl = prompt('GAS WebアプリのURLを入力してください(初回のみ)', '') || '';
-    if (!gasUrl) { window.__slotCollectorRunning = false; return; }
-    localStorage.setItem('slot_gas_url', gasUrl);
+    gasUrl = prompt('GAS WebアプリのURL(未デプロイなら空欄のままOK→コピー画面になります)', '') || '';
+    if (gasUrl) localStorage.setItem('slot_gas_url', gasUrl);
   }
 
   var aborted = false;
@@ -103,9 +102,29 @@
     return rows;
   }
 
+  function showJsonCopy(payload) {
+    var ta = document.createElement('textarea');
+    ta.value = payload;
+    ta.readOnly = true;
+    ta.style.cssText = 'width:100%;height:40vh;font-size:11px;background:#111;color:#0f0;border:1px solid #0f0;';
+    var btn = document.createElement('button');
+    btn.textContent = '収集結果JSONをコピー(約' + Math.round(payload.length / 1024) + 'KB)';
+    btn.style.cssText = 'display:block;width:100%;padding:14px;font-size:15px;background:#2b6;color:#fff;border:0;border-radius:6px;margin:8px 0;';
+    btn.onclick = function () {
+      ta.select();
+      ta.setSelectionRange(0, payload.length);
+      var done = function () { btn.textContent = 'コピーしました!メモやGoogleドキュメントに貼ってください'; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(payload).then(done, function () { document.execCommand('copy'); done(); });
+      } else { document.execCommand('copy'); done(); }
+    };
+    logDiv.appendChild(btn);
+    logDiv.appendChild(ta);
+  }
+
   try {
     var date = today();
-    log('== スロットデータ収集開始 ' + date + ' 対象:/' + filterStr + '/ ==');
+    log('== スロットデータ収集開始 ' + date + ' 対象:' + (filterStr ? '/' + filterStr + '/' : '全機種') + (gasUrl ? '' : ' [ローカルモード:GAS送信なし]') + ' ==');
 
     log('機種一覧を取得中...');
     var kishuDoc = await fetchDoc('./php/back/show/kishu_list.php?tenpo_id=' + TENPO + '&p=l&tkn=');
@@ -190,7 +209,6 @@
       }
     }
 
-    log('== 取得完了: ' + machines.length + '台。GASへ送信中... ==');
     var payload = JSON.stringify({
       ver: 1,
       action: 'collect',
@@ -199,19 +217,30 @@
       collectedAt: new Date().toISOString(),
       machines: machines
     });
-    try {
-      var res = await fetch(gasUrl, {
-        method: 'POST',
-        mode: 'cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: payload
-      });
-      var body = await res.text();
-      log('送信結果: ' + body.slice(0, 300));
-    } catch (e2) {
-      log('cors送信失敗、no-corsで再送します: ' + e2.message);
-      await fetch(gasUrl, { method: 'POST', mode: 'no-cors', body: payload });
-      log('no-corsで送信しました(応答は確認できません)');
+    if (gasUrl) {
+      log('== 取得完了: ' + machines.length + '台。GASへ送信中... ==');
+      try {
+        var res = await fetch(gasUrl, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: payload
+        });
+        var body = await res.text();
+        log('送信結果: ' + body.slice(0, 300));
+      } catch (e2) {
+        log('cors送信失敗、no-corsで再送します: ' + e2.message);
+        try {
+          await fetch(gasUrl, { method: 'POST', mode: 'no-cors', body: payload });
+          log('no-corsで送信しました(応答は確認できません)');
+        } catch (e3) {
+          log('送信できませんでした。下のコピー画面から手動で保存してください');
+          showJsonCopy(payload);
+        }
+      }
+    } else {
+      log('== 取得完了: ' + machines.length + '台。GAS未設定のためコピー画面を表示します ==');
+      showJsonCopy(payload);
     }
     log('== 完了。「中止/閉じる」で閉じてください ==');
   } catch (e) {
