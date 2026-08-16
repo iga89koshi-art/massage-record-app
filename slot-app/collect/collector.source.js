@@ -71,7 +71,7 @@
 
   function parseCounters(doc) {
     var out = {};
-    doc.querySelectorAll('#data_counter_s li').forEach(function (li) {
+    doc.querySelectorAll('#data_counter_s li, #data_counter_p li').forEach(function (li) {
       var labelEl = li.querySelector('.normalWhiteText');
       var ov = li.querySelector('.overrideText');
       if (!labelEl || !ov) return;
@@ -137,6 +137,8 @@
       var key = no + '_' + kashitama;
       if (seenKishu[key]) return;
       seenKishu[key] = 1;
+      var isSlot = /s$/.test(kashitama || '');
+      if (!isSlot && localStorage.getItem('slot_include_pachi') !== '1') return;
       if (KISHU_FILTER.test(name)) {
         kishus.push({ no: no, kashitama: kashitama, name: name, nameEnc: tr.getAttribute('data-kishu_name') || '' });
       }
@@ -178,9 +180,10 @@
         if (aborted) return;
         var daiban = daibans[j];
         try {
-          var dedamaUrl = './php/back/show/dedama.php?tenpo_id=' + TENPO +
-            '&daiban=' + daiban + '&_date=' + date + '&kishu_no=' + k.no +
-            '&from_search=0&p=l&tkn=&dai_ext_tkn=';
+          var dedamaUrl = './php/back/show/dedama.self.php?tenpo_id=' + TENPO +
+            '&base_tenpo_id=' + TENPO + '&_date=' + date + '&daiban=' + daiban +
+            '&max_y_minus=null&max_y_plus=null&kishu_no=' + k.no +
+            '&kashitama_id=' + k.kashitama + '&from_search=0&p=l&tkn=&dai_ext_tkn=';
           var dDoc = await fetchDoc(dedamaUrl);
           var c = parseCounters(dDoc);
           var updM = dDoc.body.textContent.match(/(\d+\/\d+\s+\d+:\d+)\s*更新/);
@@ -201,7 +204,11 @@
             history: parseHistory(dDoc)
           });
           var last = machines[machines.length - 1];
-          log('  台' + daiban + ' BB:' + last.bb + ' RB:' + last.rb + ' 累計:' + last.totalStart + ' 合成:1/' + last.gousei);
+          if (last.totalStart === null && last.bb === null && !last.history.length) {
+            log('  台' + daiban + ' ⚠データが取れていません(構造不一致の可能性)');
+          } else {
+            log('  台' + daiban + ' BB:' + last.bb + ' RB:' + last.rb + ' 累計:' + last.totalStart + ' 合成:1/' + last.gousei);
+          }
         } catch (err) {
           log('  台' + daiban + ' 取得失敗: ' + err.message);
         }
