@@ -14,7 +14,6 @@ const STORAGE_KEYS = {
     APP_TOKEN: 'app_token',
     OFFLINE_QUEUE: 'offline_queue',
     TREATMENT_DRAFT: 'treatment_draft',
-    SALES_DRAFT: 'sales_draft',
     SCHEDULES: 'basic_schedules',
     VISIT_PLANS: 'visit_plans',
     SERVICE_PLANS: 'service_plans',
@@ -114,10 +113,6 @@ function getTreatmentStaff() {
     return staff.filter(s => s.type && s.type.includes('施術'));
 }
 
-function getSalesStaff() {
-    const staff = getStaff();
-    return staff.filter(s => s.type && s.type.includes('営業'));
-}
 
 // === 基本スケジュールデータ ===
 
@@ -409,17 +404,6 @@ function clearTreatmentDraft() {
     return removeFromStorage(STORAGE_KEYS.TREATMENT_DRAFT);
 }
 
-function saveSalesDraft(data) {
-    return saveToStorage(STORAGE_KEYS.SALES_DRAFT, data);
-}
-
-function getSalesDraft() {
-    return getFromStorage(STORAGE_KEYS.SALES_DRAFT, null);
-}
-
-function clearSalesDraft() {
-    return removeFromStorage(STORAGE_KEYS.SALES_DRAFT);
-}
 
 // === キャッシュ管理 ===
 

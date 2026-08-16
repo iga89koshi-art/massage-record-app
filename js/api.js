@@ -91,30 +91,6 @@ async function getTreatmentRecords(filters = {}) {
     );
 }
 
-// === 営業記録 ===
-
-async function saveSalesRecord(record) {
-    if (!navigator.onLine) {
-        addToOfflineQueue({
-            type: 'sales',
-            data: record
-        });
-        refreshSyncBadgeSafe();
-        requestBackgroundSync();
-        return { success: true, offline: true };
-    }
-
-    return await callApiWithRetry(() =>
-        callGasApi('saveSales', record)
-    );
-}
-
-async function getSalesRecords(filters = {}) {
-    return await callApiWithRetry(() =>
-        callGasApi('getSales', filters)
-    );
-}
-
 // === 施術録（療養費の保険記録） ===
 
 async function saveOperationRecord(record) {

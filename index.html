@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="訪問マッサージ業務の施術記録と営業記録を管理するアプリ">
+    <meta name="description" content="訪問マッサージ業務の施術記録と訪問スケジュールを管理するアプリ">
     <meta name="theme-color" content="#2196F3">
     <title>訪問マッサージ記録</title>
     <!-- PWA設定 -->
@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <!-- スタイルシート -->
-    <link rel="stylesheet" href="./styles/main.css?v=20">
+    <link rel="stylesheet" href="./styles/main.css?v=21">
 </head>
 
 <body>
@@ -59,10 +59,6 @@
                 <button id="btn-labels" class="menu-btn print">
                     <span class="icon">✉️</span>
                     <span class="label">宛名ラベル</span>
-                </button>
-                <button id="btn-sales" class="menu-btn secondary">
-                    <span class="icon">📞</span>
-                    <span class="label">営業記録を入力</span>
                 </button>
                 <button id="btn-view" class="menu-btn info">
                     <span class="icon">📊</span>
@@ -125,58 +121,12 @@
         </div>
     </div>
 
-    <!-- 営業記録入力画面（一括入力） -->
-    <div id="sales" class="screen">
-        <div class="container">
-            <header class="screen-header">
-                <h2>📞 営業記録入力</h2>
-            </header>
-
-            <!-- 共通項目 -->
-            <div class="batch-common">
-                <div class="form-group">
-                    <label for="sales-date">日付</label>
-                    <input type="date" id="sales-date" class="form-control" required>
-                </div>
-                <div class="form-group">
-                    <label for="sales-staff">営業担当 <span class="required">*</span></label>
-                    <select id="sales-staff" class="form-control" required>
-                        <option value="">選択してください</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- 記録リスト -->
-            <div id="sales-batch-list" class="batch-list">
-                <!-- 動的に追加される -->
-            </div>
-
-            <!-- 操作ボタン -->
-            <div class="batch-list-actions">
-                <button type="button" id="btn-add-sales-entry" class="btn btn-add-entry">＋ ケアマネを追加</button>
-                <button type="button" id="btn-load-schedule-sales" class="btn btn-copy-last-week">📅 スケジュールを読込</button>
-            </div>
-
-            <div class="button-group batch-actions">
-                <button type="button" id="btn-save-batch-sales" class="btn btn-save-batch">まとめて保存</button>
-                <button type="button" id="btn-clear-sales" class="btn btn-clear-batch">クリア</button>
-            </div>
-            <div class="button-group">
-                <button type="button" id="btn-back-sales" class="btn btn-secondary">戻る</button>
-            </div>
-        </div>
-    </div>
-
     <!-- 記録閲覧画面 -->
     <div id="view" class="screen">
         <div class="container">
             <header class="screen-header">
                 <h2>📊 記録閲覧</h2>
             </header>
-            <div class="tabs">
-                <button id="tab-treatment" class="tab-btn active">施術記録</button>
-                <button id="tab-sales" class="tab-btn">営業記録</button>
-            </div>
             <p id="view-staff-note" class="section-note hidden">自分が担当する患者の記録だけを表示しています。</p>
             <!-- 施術記録タブ -->
             <div id="treatment-tab" class="tab-content active">
@@ -209,38 +159,6 @@
                             </tr>
                         </thead>
                         <tbody id="treatment-records-body">
-                            <tr>
-                                <td colspan="4" style="text-align: center;">表示ボタンを押してください</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <!-- 営業記録タブ -->
-            <div id="sales-tab" class="tab-content">
-                <div class="filter-section">
-                    <div class="form-group">
-                        <label for="filter-sales-period">期間</label>
-                        <select id="filter-sales-period" class="form-control">
-                            <option value="thisMonth">今月</option>
-                            <option value="lastMonth">先月</option>
-                            <option value="last3Months">過去3ヶ月</option>
-                            <option value="all">全期間</option>
-                        </select>
-                    </div>
-                    <button id="btn-load-sales" class="btn btn-primary">表示</button>
-                </div>
-                <div class="records-table">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>日付</th>
-                                <th>ケアマネ名</th>
-                                <th>営業担当</th>
-                                <th>内容</th>
-                            </tr>
-                        </thead>
-                        <tbody id="sales-records-body">
                             <tr>
                                 <td colspan="4" style="text-align: center;">表示ボタンを押してください</td>
                             </tr>
@@ -638,12 +556,12 @@
     </div>
 
     <!-- JavaScript -->
-    <script src="./js/utils.js?v=20"></script>
-    <script src="./js/storage.js?v=20"></script>
-    <script src="./js/config-share.js?v=20"></script>
-    <script src="./js/api.js?v=20"></script>
-    <script src="./js/ui.js?v=20"></script>
-    <script src="./js/app.js?v=20"></script>
+    <script src="./js/utils.js?v=21"></script>
+    <script src="./js/storage.js?v=21"></script>
+    <script src="./js/config-share.js?v=21"></script>
+    <script src="./js/api.js?v=21"></script>
+    <script src="./js/ui.js?v=21"></script>
+    <script src="./js/app.js?v=21"></script>
 </body>
 
 </html>
