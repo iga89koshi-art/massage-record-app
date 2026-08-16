@@ -213,6 +213,47 @@
     });
   }
 
+  // 当日のヒント(晒屋情報など)をリポジトリから取得し、該当台を実データと突き合わせる
+  async function showHints(machines, date) {
+    var hints;
+    try {
+      var hres = await fetch('https://raw.githubusercontent.com/iga89koshi-art/massage-record-app/claude/slot-high-setting-detector-r1fcf4/slot-app/collect/hints.json', { cache: 'no-store' });
+      if (!hres.ok) return;
+      hints = await hres.json();
+    } catch (e) { return; }
+    if (!hints || hints.date !== date) return;
+
+    function matches(m) {
+      var reasons = [];
+      if ((hints.daiban || []).indexOf(m.daiban) !== -1) reasons.push('指名台');
+      if ((hints.suffix || []).indexOf(m.daiban % 10) !== -1) reasons.push('末尾' + (m.daiban % 10));
+      (hints.kishu || []).forEach(function (kw) {
+        if (m.kishuName.indexOf(kw) !== -1) reasons.push('機種:' + kw);
+      });
+      (hints.ranges || []).forEach(function (r) {
+        if (m.daiban >= r[0] && m.daiban <= r[1]) reasons.push('島' + r[0] + '-' + r[1]);
+      });
+      return reasons;
+    }
+
+    logStrong('== 本日のヒント該当台 × 実データ (' + (hints.note || '') + ') ==', '#f9f');
+    var hit = 0;
+    machines.forEach(function (m) {
+      var reasons = matches(m);
+      if (!reasons.length || m.totalStart == null) return;
+      hit++;
+      var extra = '';
+      var spec = SPECS[m.kishuName];
+      if (spec && m.totalStart >= MIN_GAMES_RANK && m.bb != null && m.rb != null) {
+        extra = ' 高設定' + Math.round(posterior56(m, spec).p56 * 100) + '%';
+      }
+      logStrong('　台' + m.daiban + ' ' + m.kishuName.replace(/^(LB|L|S)/, '').slice(0, 12) +
+        ' G' + m.totalStart + ' 合成1/' + (m.gousei || '?') + extra +
+        ' [' + reasons.join(',') + ']', '#f9f');
+    });
+    if (!hit) logStrong('　(該当台なし)', '#f9f');
+  }
+
   try {
     var date = today();
     log('== スロットデータ収集開始 ' + date + ' 対象:' + (filterStr ? '/' + filterStr + '/' : '全機種') + (gasUrl ? '' : ' [ローカルモード:GAS送信なし]') + ' ==');
@@ -307,6 +348,7 @@
       }
     }
 
+    await showHints(machines, date);
     showAnalysis(machines);
     var payload = JSON.stringify({
       ver: 1,
