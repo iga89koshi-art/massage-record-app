@@ -1,0 +1,1 @@
+javascript:fetch('https://raw.githubusercontent.com/iga89koshi-art/massage-record-app/claude/slot-high-setting-detector-r1fcf4/slot-app/collect/collector.source.js',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(eval).catch(function(e){alert('収集ツールの読み込みに失敗: '+e.message)});

@@ -20,6 +20,13 @@
 
   var TENPO = 'angyou';
   var THROTTLE_MS = 200;
+  // 設定別ボーナス確率 [BB分母, RB分母] × 設定1〜6(公表値)
+  var SPECS = {
+    'SマイジャグラーVKD': [[273.1, 409.6], [270.8, 385.5], [266.4, 336.1], [254.0, 290.0], [240.1, 268.6], [229.1, 229.1]],
+    'Sゴーゴージャグラー3KA': [[259.0, 354.2], [256.0, 332.7], [249.2, 306.2], [246.5, 278.7], [242.7, 247.3], [234.9, 234.9]],
+    'SネオアイムジャグラーEX-KK': [[273.1, 439.8], [271.2, 399.6], [269.7, 331.0], [266.4, 315.1], [263.2, 292.6], [268.6, 268.6]]
+  };
+  var MIN_GAMES_RANK = 800;
   var filterStr = localStorage.getItem('slot_kishu_filter') || '';
   var KISHU_FILTER = new RegExp(filterStr);
 
@@ -122,6 +129,90 @@
     logDiv.appendChild(ta);
   }
 
+  function posterior56(m, spec) {
+    var n = m.totalStart;
+    var lls = spec.map(function (st) {
+      var pb = 1 / st[0], pr = 1 / st[1];
+      return m.bb * Math.log(pb) + (n - m.bb) * Math.log(1 - pb) +
+             m.rb * Math.log(pr) + (n - m.rb) * Math.log(1 - pr);
+    });
+    var mx = Math.max.apply(null, lls);
+    var ws = lls.map(function (l) { return Math.exp(l - mx); });
+    var sum = ws.reduce(function (a, b) { return a + b; }, 0);
+    var p = ws.map(function (w) { return w / sum; });
+    return { p56: p[4] + p[5], p456: p[3] + p[4] + p[5] };
+  }
+
+  function logStrong(msg, color) {
+    var p = document.createElement('div');
+    p.textContent = msg;
+    p.style.cssText = 'color:' + (color || '#ff0') + ';font-weight:bold;';
+    logDiv.appendChild(p);
+  }
+
+  function showAnalysis(machines) {
+    // 1) スペック登録済み機種(ジャグラー)はベイズ推定で高設定確率を出す
+    var jr = [];
+    machines.forEach(function (m) {
+      var spec = SPECS[m.kishuName];
+      if (!spec || m.totalStart == null || m.totalStart < MIN_GAMES_RANK || m.bb == null || m.rb == null) return;
+      var r = posterior56(m, spec);
+      jr.push({ m: m, p56: r.p56, p456: r.p456 });
+    });
+    jr.sort(function (a, b) { return b.p56 - a.p56; });
+    logStrong('== ジャグラー 高設定候補(設5・6確率順 / ' + MIN_GAMES_RANK + 'G以上) ==');
+    jr.slice(0, 12).forEach(function (r, i) {
+      var m = r.m;
+      var mark = r.p56 >= 0.45 ? '★' : (r.p56 >= 0.3 ? '◯' : '　');
+      logStrong(mark + ' 台' + m.daiban + ' ' + m.kishuName.replace(/^S/, '').slice(0, 10) +
+        ' G' + m.totalStart + ' BB' + m.bb + ' RB' + m.rb +
+        ' 合成1/' + (m.gousei || '?') +
+        ' 高設定' + Math.round(r.p56 * 100) + '%(設4以上' + Math.round(r.p456 * 100) + '%)',
+        r.p56 >= 0.45 ? '#f66' : '#ff0');
+    });
+    if (!jr.length) logStrong('(対象データなし)');
+
+    // 2) スペック未登録機種(AT機など)は同機種内で初当りの引きを比較(ポアソンz値)
+    //    連チャン(33G以内の当選)は一塊=1初当りとして数える
+    var groups = {};
+    machines.forEach(function (m) {
+      if (SPECS[m.kishuName]) return;
+      if (m.totalStart == null || m.totalStart < MIN_GAMES_RANK) return;
+      var hits;
+      if (m.history && m.history.length) {
+        var hist = m.history.slice().sort(function (a, b) { return a.no - b.no; });
+        hits = 0;
+        hist.forEach(function (h, idx) {
+          if (idx === 0 || h.start > 33) hits++;
+        });
+      } else {
+        hits = (m.bb || 0) + (m.rb || 0);
+      }
+      if (!hits) return;
+      (groups[m.kishuNo] = groups[m.kishuNo] || []).push({ m: m, hits: hits });
+    });
+    var at = [];
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k];
+      if (g.length < 4) return;
+      var sumH = 0, sumG = 0;
+      g.forEach(function (x) { sumH += x.hits; sumG += x.m.totalStart; });
+      var pbar = sumH / sumG;
+      g.forEach(function (x) {
+        var exp = x.m.totalStart * pbar;
+        at.push({ m: x.m, hits: x.hits, z: (x.hits - exp) / Math.sqrt(exp), avgDen: Math.round(1 / pbar) });
+      });
+    });
+    at.sort(function (a, b) { return b.z - a.z; });
+    logStrong('== AT機など 同機種内で当たりが強い台(参考・スペック未登録) ==', '#0cf');
+    at.filter(function (x) { return x.z >= 1; }).slice(0, 10).forEach(function (x) {
+      var m = x.m;
+      logStrong('　台' + m.daiban + ' ' + m.kishuName.replace(/^(LB|L|S)/, '').slice(0, 12) +
+        ' G' + m.totalStart + ' 当り' + x.hits + '(1/' + Math.round(m.totalStart / x.hits) + ')' +
+        ' 機種平均1/' + x.avgDen + ' 優秀度+' + x.z.toFixed(1), '#0cf');
+    });
+  }
+
   try {
     var date = today();
     log('== スロットデータ収集開始 ' + date + ' 対象:' + (filterStr ? '/' + filterStr + '/' : '全機種') + (gasUrl ? '' : ' [ローカルモード:GAS送信なし]') + ' ==');
@@ -216,6 +307,7 @@
       }
     }
 
+    showAnalysis(machines);
     var payload = JSON.stringify({
       ver: 1,
       action: 'collect',
