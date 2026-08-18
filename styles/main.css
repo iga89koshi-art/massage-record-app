@@ -779,6 +779,17 @@ tbody tr:hover {
     gap: var(--spacing-sm);
 }
 
+/* 通信できず古い予定を出しているときの注記 */
+.schedule-freshness {
+    margin-top: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    background: #FFF3E0;
+    color: #8A4B08;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
 /* 施術／お休み・振替。2つしかないので半分ずつ並べる */
 .status-grid {
     display: flex;

@@ -1103,13 +1103,37 @@ function initScheduleScreen() {
     // まずキャッシュで描く（待たせない）
     renderScheduleScreen();
 
-    // キャッシュが空のときだけ取りに行く
-    if (getTreatmentVisitPlans().length === 0) {
-        loadVisitPlansIfEmpty();
-    }
+    // そのうえで毎回、裏でNotionから取り直して差し替える。
+    // キャッシュがあるときは取りに行かない作りだったため、
+    // 予定を直しても各端末が古いまま表示し続けていた（2026-08-18 実害）
+    refreshVisitPlansInBackground();
 
     // 他サービスの併記用。無くてもスケジュールは出せるので黙って裏で取る
     loadServicePlansIfEmpty(renderScheduleScreen);
+}
+
+/**
+ * 画面を出したまま裏で訪問予定を取り直す。
+ * 取れたら差し替え、失敗したらキャッシュ表示のままにする（黙って諦める）。
+ */
+async function refreshVisitPlansInBackground() {
+    if (!getNotionVisitPlanDb()) {
+        // 設定が無い端末では、キャッシュが空のときだけ知らせる
+        if (getTreatmentVisitPlans().length === 0) {
+            showError('訪問予定データベースが設定されていません');
+        }
+        return;
+    }
+
+    try {
+        await fetchVisitPlansFromNotion();
+        saveVisitPlansFetchedAt(getTimestamp());
+        renderScheduleScreen();
+    } catch (error) {
+        // 圏外や通信断。キャッシュで表示できているので画面は触らない
+        console.warn('Background refresh of visit plans failed:', error);
+        renderScheduleFreshness(true);
+    }
 }
 
 /**
@@ -1206,6 +1230,37 @@ function renderScheduleScreen() {
     } else {
         renderScheduleDay(plans, staff);
     }
+
+    renderScheduleFreshness();
+}
+
+/**
+ * 「いつ時点の予定か」の注記。
+ * 取り直せているときは何も出さない（毎回出すとうるさいだけなので）。
+ * 通信に失敗して古い内容を出しているときだけ知らせる。
+ */
+function renderScheduleFreshness(stale) {
+    const box = document.getElementById('schedule-freshness');
+    if (!box) return;
+
+    const fetchedAt = getVisitPlansFetchedAt();
+    const show = stale === true && !!fetchedAt;
+
+    box.classList.toggle('hidden', !show);
+    if (show) {
+        box.textContent = `⚠ 最新を取得できませんでした。${formatFetchedAt(fetchedAt)}時点の予定を表示しています`;
+    }
+}
+
+/**
+ * 保存してある取得時刻を「8/18 14:27」の形にする
+ */
+function formatFetchedAt(timestamp) {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return timestamp;
+
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /**
@@ -1914,6 +1969,26 @@ function initPatientInfoScreen() {
 
     // 他サービスがまだ無ければ取りに行き、取れたら描き直す
     loadServicePlansIfEmpty(renderPatientInfo);
+
+    // 患者の追加や担当替えを拾うため、裏で患者データも取り直す。
+    // 訪問予定と同じく、キャッシュがあると取りに行かない作りだった
+    refreshPatientsInBackground();
+}
+
+/**
+ * 画面を出したまま裏で患者データを取り直す。
+ * 失敗したらキャッシュ表示のままにする（黙って諦める）。
+ */
+async function refreshPatientsInBackground() {
+    if (!getNotionPatientDb()) return;
+
+    try {
+        await fetchPatientsFromNotion();
+        populatePatientInfoSelect();
+        renderPatientInfo();
+    } catch (error) {
+        console.warn('Background refresh of patients failed:', error);
+    }
 }
 
 /**

@@ -16,6 +16,7 @@ const STORAGE_KEYS = {
     TREATMENT_DRAFT: 'treatment_draft',
     SCHEDULES: 'basic_schedules',
     VISIT_PLANS: 'visit_plans',
+    VISIT_PLANS_FETCHED_AT: 'visit_plans_fetched_at',
     SERVICE_PLANS: 'service_plans',
     INSTRUCTIONS: 'instructions',
     SCHEDULE_STAFF: 'schedule_staff',
@@ -407,11 +408,24 @@ function clearTreatmentDraft() {
 
 // === キャッシュ管理 ===
 
+/**
+ * 訪問予定を最後にNotionから取れた時刻。
+ * 圏外で取り直せなかったときに「いつ時点の表示か」を出すために使う。
+ */
+function saveVisitPlansFetchedAt(timestamp) {
+    return saveToStorage(STORAGE_KEYS.VISIT_PLANS_FETCHED_AT, timestamp);
+}
+
+function getVisitPlansFetchedAt() {
+    return getFromStorage(STORAGE_KEYS.VISIT_PLANS_FETCHED_AT, '');
+}
+
 function clearCache() {
     removeFromStorage(STORAGE_KEYS.PATIENTS);
     removeFromStorage(STORAGE_KEYS.STAFF);
     removeFromStorage(STORAGE_KEYS.SCHEDULES);
     removeFromStorage(STORAGE_KEYS.VISIT_PLANS);
+    removeFromStorage(STORAGE_KEYS.VISIT_PLANS_FETCHED_AT);
     removeFromStorage(STORAGE_KEYS.SERVICE_PLANS);
     removeFromStorage(STORAGE_KEYS.INSTRUCTIONS);
     removeFromStorage(STORAGE_KEYS.LABEL_TARGETS);
