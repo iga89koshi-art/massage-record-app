@@ -37,7 +37,6 @@ const INSTRUCTION_ID_COLUMN = INSTRUCTION_HEADERS.indexOf('ID') + 1;
 const INSTRUCTION_STATUS_COLUMN = INSTRUCTION_HEADERS.indexOf('状態') + 1;
 const INSTRUCTION_DONE_BY_COLUMN = INSTRUCTION_HEADERS.indexOf('完了者') + 1;
 const INSTRUCTION_DONE_AT_COLUMN = INSTRUCTION_HEADERS.indexOf('完了日') + 1;
-// 宛先に入れる「全員」の表記。施術者名と混ざらないよう1か所に固定する。
 // 「@全員」はアプリ側で1人ずつに展開してから送ってくるので、シートに「全員」の行は入らない
 const INSTRUCTION_DONE = '完了';
 
@@ -186,6 +185,27 @@ function doGet(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// 施術記録シートの区分。8列目に入る。
+// 「施術」以外の行は、報告書の施術日にも療養費の申請にも入れないこと。
+const TREATMENT_STATUS_DONE = '施術';
+const TREATMENT_STATUS_ABSENT = 'お休み・振替';
+
+/**
+ * 既存の施術記録シートに「区分」「休みの理由」列が無ければ足す。
+ * 何度呼んでも安全。列は末尾に足すので、既存の読み取り位置はずれない。
+ */
+function ensureTreatmentColumns_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+
+  if (headers.indexOf('区分') === -1) {
+    sheet.getRange(1, 8).setValue('区分');
+  }
+  if (headers.indexOf('休みの理由') === -1) {
+    sheet.getRange(1, 9).setValue('休みの理由');
+  }
+}
+
 /**
  * 施術記録を保存
  */
@@ -196,7 +216,14 @@ function saveTreatmentRecord(data) {
     if (!sheet) {
       throw new Error('施術記録シートが見つかりません');
     }
-    
+
+    ensureTreatmentColumns_(sheet);
+
+    // 区分が送られてこない古いアプリからの保存は「施術」として扱う
+    const status = String(data.status || '').trim() === TREATMENT_STATUS_ABSENT
+      ? TREATMENT_STATUS_ABSENT
+      : TREATMENT_STATUS_DONE;
+
     const row = [
       data.date || '',
       data.patientId || '',
@@ -204,7 +231,9 @@ function saveTreatmentRecord(data) {
       data.staff || '',
       data.memo || '',
       data.timestamp || new Date().toISOString(),
-      data.notionSynced || ''
+      data.notionSynced || '',
+      status,
+      status === TREATMENT_STATUS_ABSENT ? (data.absenceReason || '') : ''
     ];
     
     sheet.appendRow(row);
@@ -271,7 +300,10 @@ function getTreatmentRecords(filters) {
         staff: row[3] || '',
         memo: row[4] || '',
         timestamp: row[5] || '',
-        notionSynced: row[6] || ''
+        notionSynced: row[6] || '',
+        // 古い行は区分が空。その場合は「施術」とみなす
+        status: row[7] || TREATMENT_STATUS_DONE,
+        absenceReason: row[8] || ''
       };
 
       // 日付をフォーマット
@@ -1081,7 +1113,7 @@ function initializeSpreadsheet() {
   let treatmentSheet = ss.getSheetByName(SHEET_NAMES.TREATMENT);
   if (!treatmentSheet) {
     treatmentSheet = ss.insertSheet(SHEET_NAMES.TREATMENT);
-    treatmentSheet.appendRow(['日付', '患者ID', '患者名', '担当者', 'メモ', 'タイムスタンプ', 'Notion送信済み']);
+    treatmentSheet.appendRow(['日付', '患者ID', '患者名', '担当者', 'メモ', 'タイムスタンプ', 'Notion送信済み', '区分', '休みの理由']);
     treatmentSheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#2196F3').setFontColor('#FFFFFF');
   }
   

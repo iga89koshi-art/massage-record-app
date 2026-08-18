@@ -779,6 +779,16 @@ tbody tr:hover {
     gap: var(--spacing-sm);
 }
 
+/* 施術／お休み・振替。2つしかないので半分ずつ並べる */
+.status-grid {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.status-grid .check-item {
+    flex: 1 1 50%;
+}
+
 /* 3列に並べつつ、文字数の多い項目は自動で1行に落とす */
 .check-item {
     flex: 1 1 calc(33.333% - 8px);

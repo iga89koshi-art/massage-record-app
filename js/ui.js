@@ -303,7 +303,9 @@ function initTreatmentScreen() {
                 if (entry.patient || entry.memo) {
                     addTreatmentEntry(entry.patient, entry.memo, '', {
                         parts: entry.parts,
-                        treatments: entry.treatments
+                        treatments: entry.treatments,
+                        status: entry.status,
+                        absenceReason: entry.absenceReason
                     });
                     addedCount++;
                 }
@@ -411,6 +413,39 @@ function findPatientByName(name) {
 /**
  * 施術記録エントリーを追加
  */
+// 施術記録の区分。code.gs 側の TREATMENT_STATUS_* と同じ文字列にすること。
+const TREATMENT_STATUS_DONE = '施術';
+const TREATMENT_STATUS_ABSENT = 'お休み・振替';
+
+/**
+ * 「施術」と「お休み・振替」は同時に選べない。
+ * お休みのときは部位・施術内容を隠し、理由の欄を出す。
+ */
+function onTreatmentStatusChange(entryId, picked) {
+    const entry = document.getElementById(entryId);
+    if (!entry) return;
+
+    const done = entry.querySelector('.entry-status-done');
+    const absent = entry.querySelector('.entry-status-absent');
+
+    // 両方外した状態は作らない。押した方を必ず選択状態にする
+    if (picked === 'absent') {
+        absent.checked = true;
+        done.checked = false;
+    } else {
+        done.checked = true;
+        absent.checked = false;
+    }
+
+    entry.querySelectorAll('.entry-treatment-fields').forEach(el => {
+        el.classList.toggle('hidden', absent.checked);
+    });
+    const reason = entry.querySelector('.entry-absence-group');
+    if (reason) reason.classList.toggle('hidden', !absent.checked);
+
+    autoSaveTreatmentDraft();
+}
+
 function addTreatmentEntry(patient, memo, time, options) {
     const opts = options || {};
     treatmentEntryCounter++;
@@ -441,6 +476,9 @@ function addTreatmentEntry(patient, memo, time, options) {
     const parts = Array.isArray(opts.parts) ? opts.parts : base.parts;
     const treatments = Array.isArray(opts.treatments) ? opts.treatments : base.treatments;
 
+    // 区分の初期値は「施術」。一時保存からの復元のときだけ、その状態を引き継ぐ
+    const absent = opts.status === TREATMENT_STATUS_ABSENT;
+
     const entry = document.createElement('div');
     entry.className = 'batch-entry';
     entry.id = entryId;
@@ -457,12 +495,32 @@ function addTreatmentEntry(patient, memo, time, options) {
             </select>
         </div>
         <div class="form-group">
+            <label>区分</label>
+            <div class="status-grid">
+                <label class="check-item">
+                    <input type="checkbox" class="entry-status-done"${absent ? '' : ' checked'}
+                        onchange="onTreatmentStatusChange('${entryId}', 'done')"> 施術
+                </label>
+                <label class="check-item">
+                    <input type="checkbox" class="entry-status-absent"${absent ? ' checked' : ''}
+                        onchange="onTreatmentStatusChange('${entryId}', 'absent')"> お休み・振替
+                </label>
+            </div>
+        </div>
+        <div class="form-group entry-absence-group${absent ? '' : ' hidden'}">
+            <label>お休み・振替の理由</label>
+            <input type="text" class="form-control entry-absence-reason"
+                placeholder="例：発熱のため／デイの行事と重なったため"
+                value="${escapeHtml(opts.absenceReason || '')}"
+                oninput="autoSaveTreatmentDraft()">
+        </div>
+        <div class="form-group entry-treatment-fields${absent ? ' hidden' : ''}">
             <label>部位</label>
             <div class="check-grid">
                 ${createCheckboxesHtml(OPERATION_PARTS, 'entry-part', parts)}
             </div>
         </div>
-        <div class="form-group">
+        <div class="form-group entry-treatment-fields${absent ? ' hidden' : ''}">
             <label>施術内容</label>
             <div class="check-grid">
                 ${createCheckboxesHtml(OPERATION_TREATMENTS, 'entry-treatment', treatments)}
@@ -527,8 +585,19 @@ async function saveBatchTreatment() {
         const parts = getCheckedValues(entry, '.entry-part');
         const treatments = getCheckedValues(entry, '.entry-treatment');
 
+        const absentEl = entry.querySelector('.entry-status-absent');
+        const isAbsent = !!(absentEl && absentEl.checked);
+        const reasonEl = entry.querySelector('.entry-absence-reason');
+        const absenceReason = reasonEl ? reasonEl.value.trim() : '';
+
         if (!patient) {
             showError(`記録${index + 1}: 患者を選択してください`);
+            hasError = true;
+            return;
+        }
+
+        if (isAbsent && !absenceReason) {
+            showError(`記録${index + 1}: お休み・振替の理由を入れてください`);
             hasError = true;
             return;
         }
@@ -544,10 +613,13 @@ async function saveBatchTreatment() {
                 staff,
                 memo,
                 timestamp,
-                notionSynced: ''
+                notionSynced: '',
+                status: isAbsent ? TREATMENT_STATUS_ABSENT : TREATMENT_STATUS_DONE,
+                absenceReason: isAbsent ? absenceReason : ''
             },
-            // 部位と施術内容が両方選ばれているときだけ施術録に残す
-            operationRecord: (parts.length && treatments.length) ? {
+            // 施術録は療養費の裏付けなので、お休み・振替の日は絶対に書かない。
+            // 施術した日で、部位と施術内容が両方選ばれているときだけ残す
+            operationRecord: (!isAbsent && parts.length && treatments.length) ? {
                 date,
                 patientId: '',
                 patientName: patient,
@@ -670,11 +742,16 @@ function autoSaveTreatmentDraft() {
 
     const entries = [];
     document.querySelectorAll('#treatment-batch-list .batch-entry').forEach(entry => {
+        const absent = entry.querySelector('.entry-status-absent');
+        const reason = entry.querySelector('.entry-absence-reason');
+
         entries.push({
             patient: entry.querySelector('.entry-patient').value,
             memo: entry.querySelector('.entry-memo').value,
             parts: getCheckedValues(entry, '.entry-part'),
-            treatments: getCheckedValues(entry, '.entry-treatment')
+            treatments: getCheckedValues(entry, '.entry-treatment'),
+            status: (absent && absent.checked) ? TREATMENT_STATUS_ABSENT : TREATMENT_STATUS_DONE,
+            absenceReason: reason ? reason.value : ''
         });
     });
 
