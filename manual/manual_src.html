@@ -1,0 +1,419 @@
+<title>施術記録アプリ 使い方（スタッフ用）</title>
+
+<style>
+  :root {
+    --ground: #eef1f5;
+    --paper: #ffffff;
+    --ink: #16202b;
+    --ink-soft: #55636f;
+    --ink-faint: #8a97a3;
+    --rule: #d5dde5;
+    --accent: #12558f;
+    --accent-soft: #e3edf7;
+    --caution: #a8410d;
+    --caution-soft: #fbeee6;
+    --shadow: 0 1px 2px rgba(22, 32, 43, .07), 0 8px 24px rgba(22, 32, 43, .05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #12181f;
+      --paper: #1b232d;
+      --ink: #e6ecf2;
+      --ink-soft: #a6b3c0;
+      --ink-faint: #74828f;
+      --rule: #2f3b48;
+      --accent: #7fb6e8;
+      --accent-soft: #1f2d3b;
+      --caution: #e9a077;
+      --caution-soft: #2a1f18;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #12181f;
+    --paper: #1b232d;
+    --ink: #e6ecf2;
+    --ink-soft: #a6b3c0;
+    --ink-faint: #74828f;
+    --rule: #2f3b48;
+    --accent: #7fb6e8;
+    --accent-soft: #1f2d3b;
+    --caution: #e9a077;
+    --caution-soft: #2a1f18;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  }
+
+  body {
+    margin: 0;
+    padding: 0 20px 96px;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic",
+                 "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 41rem; margin: 0 auto; }
+
+  /* --- 表紙 --- */
+  .cover { padding: 56px 0 40px; border-bottom: 2px solid var(--ink); }
+  .cover .eyebrow {
+    margin: 0 0 14px;
+    font-size: 12px; font-weight: 700; letter-spacing: .18em;
+    color: var(--accent);
+  }
+  .cover h1 {
+    margin: 0 0 18px;
+    font-size: clamp(30px, 7vw, 42px); font-weight: 800; line-height: 1.3;
+    letter-spacing: -.01em; text-wrap: balance;
+  }
+  .cover p { margin: 0; max-width: 32rem; color: var(--ink-soft); }
+
+  /* --- 章 --- */
+  section { margin: 56px 0 0; }
+  h2 {
+    margin: 0 0 8px;
+    font-size: 23px; font-weight: 800; line-height: 1.45;
+    text-wrap: balance;
+  }
+  h2 .num {
+    display: inline-block; min-width: 1.9em;
+    color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  .lede { margin: 0 0 24px; color: var(--ink-soft); }
+  h3 {
+    margin: 32px 0 10px;
+    font-size: 17px; font-weight: 700; line-height: 1.5;
+  }
+  p { margin: 0 0 16px; }
+  strong { font-weight: 700; }
+
+  /* --- 手順 --- */
+  ol.steps { margin: 0 0 16px; padding: 0; list-style: none; counter-reset: s; }
+  ol.steps > li {
+    position: relative;
+    margin: 0 0 18px; padding: 0 0 0 44px;
+    counter-increment: s;
+  }
+  ol.steps > li::before {
+    content: counter(s);
+    position: absolute; left: 0; top: 2px;
+    display: grid; place-items: center;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent); color: var(--paper);
+    font-size: 14px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  ol.steps > li > :last-child { margin-bottom: 0; }
+
+  ul.plain { margin: 0 0 16px; padding-left: 1.3em; }
+  ul.plain li { margin-bottom: 8px; }
+
+  /* --- 画面写真 --- */
+  figure {
+    margin: 24px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  figure img {
+    display: block; width: 100%; max-width: 290px; height: auto;
+    border: 1px solid var(--rule); border-radius: 18px;
+    background: #f3f4f6;
+    box-shadow: var(--shadow);
+  }
+  figcaption {
+    max-width: 30rem;
+    color: var(--ink-faint); font-size: 13.5px; line-height: 1.7; text-align: center;
+  }
+  .pair {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px; margin: 24px 0;
+  }
+  .pair figure { margin: 0; }
+
+  /* --- 注意書き --- */
+  .note {
+    margin: 24px 0; padding: 16px 18px;
+    background: var(--paper); border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0; box-shadow: var(--shadow);
+  }
+  .note.caution { border-left-color: var(--caution); background: var(--caution-soft); }
+  .note > :first-child { margin-top: 0; }
+  .note > :last-child { margin-bottom: 0; }
+  .note b { display: block; margin-bottom: 4px; font-size: 15px; }
+
+  /* --- 表 --- */
+  .scroll { overflow-x: auto; margin: 24px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td {
+    padding: 12px 14px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--rule);
+  }
+  th { font-weight: 700; white-space: nowrap; }
+  thead th { border-bottom: 2px solid var(--ink); font-size: 13px; letter-spacing: .04em; }
+
+  /* --- 困ったとき --- */
+  .qa { margin: 0; }
+  .qa dt {
+    margin: 22px 0 6px; padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-weight: 700;
+  }
+  .qa dt:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .qa dd { margin: 0; color: var(--ink-soft); }
+
+  footer {
+    margin: 64px 0 0; padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-faint); font-size: 14px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+
+  /* --- 紙に印刷したとき --- */
+  @page { size: A4; margin: 16mm 15mm; }
+
+  @media print {
+    :root {
+      --ground: #ffffff;
+      --paper: #ffffff;
+      --ink: #101010;
+      --ink-soft: #3d3d3d;
+      --ink-faint: #6b6b6b;
+      --rule: #c8c8c8;
+      --accent: #0f4c81;
+      --caution: #8f3708;
+      --caution-soft: #f7f0ea;
+      --shadow: none;
+    }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    body { padding: 0; font-size: 11.5pt; line-height: 1.7; }
+    .wrap { max-width: none; }
+
+    .cover { padding: 0 0 20px; }
+    .cover h1 { font-size: 26pt; }
+
+    section { margin-top: 26px; break-before: auto; }
+    h2 { font-size: 15pt; break-after: avoid; }
+    h3 { break-after: avoid; }
+    .lede { margin-bottom: 14px; }
+
+    /* 途中で切れると読めなくなるものは丸ごと次のページへ送る */
+    figure, .note, table, ol.steps > li, .qa dt, .qa dd { break-inside: avoid; }
+    .qa dt { break-after: avoid; }
+
+    /* 紙では画面写真とその説明を横に並べる。縦に積むと1枚で1ページ近く使ってしまう */
+    figure { flex-direction: row; align-items: flex-start; gap: 8mm; margin: 16px 0; }
+    figure img { width: 56mm; max-width: 56mm; flex: none; border-radius: 6px; box-shadow: none; }
+    figcaption { text-align: left; font-size: 10pt; }
+    .pair { display: block; }
+    .pair figure { margin: 0 0 16px; }
+    .note { box-shadow: none; border: 1px solid var(--rule); border-left-width: 3px; }
+    /* 「指示を終えたら」が途中で折り返さないように */
+    td:first-child { white-space: nowrap; }
+    footer { margin-top: 28px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="cover">
+    <p class="eyebrow">五十嵐鍼灸院　訪問マッサージ</p>
+    <h1>施術記録アプリの使い方</h1>
+    <p>毎日の記録をスマホから入れるためのアプリです。紙のメモやスプレッドシートを探す必要はありません。この手引きのとおりに進めれば使えます。</p>
+  </header>
+
+  <section>
+    <h2><span class="num">1.</span>最初の1回だけ</h2>
+    <p class="lede">院長から<strong>設定コード</strong>と<strong>パスワード</strong>を受け取ってください。別々の方法で届きます（片方はLINE、もう片方は口頭など）。</p>
+
+    <ol class="steps">
+      <li><p>スマホで院長から届いたアプリのリンクを開きます。</p></li>
+      <li><p>ホーム画面の <strong>⚙️ 設定</strong> を押します。</p></li>
+      <li><p><strong>「設定コードを読み込む」</strong> を押し、受け取ったコードを貼り付けます。</p></li>
+      <li><p>パスワードを入れます。これで接続先も担当者名も自動で入ります。</p></li>
+      <li><p>ホームに戻り、自分の名前でスケジュールが出れば完了です。</p></li>
+    </ol>
+
+    <figure>
+      <img src="{{IMG:settings}}" alt="設定画面。バックエンド合言葉の欄と、設定コードを読み込むボタン">
+      <figcaption>設定画面。ここで触るのは「設定コードを読み込む」だけです。合言葉の欄は自分で入力しなくても、コードを読み込めば入ります。</figcaption>
+    </figure>
+
+    <div class="note">
+      <b>ホーム画面に置いてください</b>
+      <p>ブラウザの共有ボタンから「ホーム画面に追加」を選ぶと、普通のアプリと同じようにアイコンから開けます。毎日使うので、ここまでやっておくと楽です。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">2.</span>アプリを開いたら、まず指示を見る</h2>
+    <p class="lede">院長からの指示があると、ホームの一番上にカードで出ます。<strong>自分宛ての分だけ</strong>が出ます。</p>
+
+    <figure>
+      <img src="{{IMG:home}}" alt="ホーム画面。上に指示のカードが2件、その下にメニューが並んでいる">
+      <figcaption>ホーム画面。上の2枚が指示です。その下がメニュー。</figcaption>
+    </figure>
+
+    <p>やり終えたら <strong>「✓ 完了」</strong> を押してください。押すとカードが消え、院長の画面に「済み」と表示されます。<strong>報告の連絡は要りません。</strong></p>
+
+    <div class="note">
+      <b>押し忘れても消えません</b>
+      <p>完了を押すまで、アプリを開くたびに出続けます。忘れ防止のための仕組みなので、終わってから押してください。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">3.</span>訪問スケジュールを見る</h2>
+    <p class="lede">その日に回る先が時間順に並びます。スプレッドシートを開く必要はありません。</p>
+
+    <figure>
+      <img src="{{IMG:schedule}}" alt="訪問スケジュール画面。9時・10時・11時の訪問が並び、オレンジ色で他サービスの予定が併記されている">
+      <figcaption>訪問スケジュール。左右の矢印で日を変えられます。「日」「週」で表示を切り替えられます。オレンジの行は、その患者さんが使っている他のサービスです。</figcaption>
+    </figure>
+
+    <div class="note">
+      <b>他の人の予定は出ません</b>
+      <p>ここに出るのは<strong>自分の訪問だけ</strong>です。他の施術者の予定は表示されない作りになっています。故障ではありません。</p>
+    </div>
+
+    <p>カードを押すと、そのまま施術記録の入力に進みます。</p>
+  </section>
+
+  <section>
+    <h2><span class="num">4.</span>施術記録を入れる</h2>
+    <p class="lede">その日の訪問が終わったら記録します。<strong>1件ずつ送らず、まとめて保存</strong>できます。</p>
+
+    <figure>
+      <img src="{{IMG:treatment}}" alt="施術記録入力画面。日付と担当者、患者の選択、部位と施術内容のチェック欄">
+      <figcaption>施術記録の入力画面。担当者は自分の名前で固定されているので、選ぶ必要はありません。区分は最初から「施術」が選ばれています。</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li><p>日付を確かめます。当日ならそのままで結構です。</p></li>
+      <li><p><strong>「📅 スケジュールを読込」</strong> を押すと、その日の患者さんが一気に並びます。1人ずつ選ばなくて済みます。</p></li>
+      <li><p>患者ごとに <strong>部位</strong>（頸部・肩部・背部・腰部・上肢・下肢）と <strong>施術内容</strong> にチェックを入れます。</p></li>
+      <li><p>お休みや振替になった方は、<strong>「お休み・振替」に切り替えます</strong>（次の項目）。</p></li>
+      <li><p>最後に <strong>「まとめて保存」</strong> を押します。</p></li>
+    </ol>
+
+    <h3>お休み・振替になったとき</h3>
+    <p class="lede"><strong>行を消さないでください。</strong>「お休み・振替」に切り替えて、そのまま保存します。</p>
+
+    <figure>
+      <img src="{{IMG:absence}}" alt="区分で「お休み・振替」が選ばれ、理由の欄に「発熱のため」と入っている画面">
+      <figcaption>「お休み・振替」を押すと部位と施術内容が消え、理由の欄が出ます。</figcaption>
+    </figure>
+
+    <ul class="plain">
+      <li><strong>「お休み・振替」を押す</strong>と「施術」のチェックが自動で外れます。両方を選ぶことはできません</li>
+      <li><strong>理由は必ず書いてください。</strong>空のままだと保存できません</li>
+      <li>短くて構いません。「発熱のため」「デイの行事と重なったため」「ご家族の都合で来週へ振替」程度で十分です</li>
+      <li>部位と施術内容は消えます。<strong>お休みの日は入れなくて結構です</strong></li>
+    </ul>
+
+    <div class="note">
+      <b>なぜ行を消さずに残すのか</b>
+      <p>お休みだった事実と理由が残ると、ケアマネジャーへの報告書に書けます。行を消してしまうと「その日はどうしたのか」が誰にも分からなくなります。</p>
+      <p><strong>お休みの日は施術日には数えません。</strong>報告書にも療養費の請求にも入らないので、安心して残してください。</p>
+    </div>
+
+    <div class="note">
+      <b>2回目からは覚えています</b>
+      <p>その患者さんにいつも入れている部位と内容は、次から最初からチェックが入った状態で出ます。変わったときだけ直してください。</p>
+    </div>
+
+    <div class="note caution">
+      <b>電波が悪くても大丈夫です</b>
+      <p>圏外で保存すると、いったん端末に貯まります。電波が戻ると自動で送られます。ホームに「未送信の記録が◯件あります」と出たら、電波のある場所で <strong>「今すぐ送信」</strong> を押してください。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">5.</span>患者さんの情報を入れる</h2>
+    <p class="lede">気づいたことを書き足しておく場所です。<strong>担当している患者さんだけ</strong>が選べます。</p>
+
+    <div class="pair">
+      <figure>
+        <img src="{{IMG:patient}}" alt="患者情報画面。既往歴・現在の症状・同居家族の入力欄">
+        <figcaption>既往歴・現在の症状・同居家族。書いたら「患者メモを保存」を押します。</figcaption>
+      </figure>
+      <figure>
+        <img src="{{IMG:service}}" alt="他サービス利用予定。デイサービスの予定が1件登録されている">
+        <figcaption>他サービス利用予定。ここに入れたものが、スケジュールにオレンジで出ます。</figcaption>
+      </figure>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>項目</th><th>何を書くか</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>既往歴</td><td>過去の病気や手術。施術の判断に関わるもの（例：脳梗塞、圧迫骨折）</td></tr>
+          <tr><td>現在の症状</td><td>今の訴え。麻痺・痛み・歩行の状態など</td></tr>
+          <tr><td>同居家族</td><td>誰と住んでいるか。日中ひとりかどうか</td></tr>
+          <tr><td>他サービス</td><td>訪問介護・訪問看護・デイなど。曜日と時間帯</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>他サービスの予定を足すとき</h3>
+    <p><strong>「＋ 予定を追加」</strong> を押し、サービスの種類・事業所名・曜日・時間帯を選びます。時間がはっきりしていれば「時刻指定」を選んで開始と終了を入れてください。分からなければ「午前」「午後」で構いません。</p>
+
+    <div class="note">
+      <b>ご家族から聞いた話で結構です</b>
+      <p>正確な契約内容を調べる必要はありません。「木曜の午前はデイに行っている」程度で十分役に立ちます。分かった時点で入れてください。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">6.</span>困ったとき</h2>
+
+    <dl class="qa">
+      <dt>保存できませんでした、と出る</dt>
+      <dd>電波が届いていない可能性が高いです。記録は消えていません。電波のある場所でホームの「今すぐ送信」を押してください。それでも駄目なら院長に連絡を。</dd>
+
+      <dt>患者さんが一覧に出てこない</dt>
+      <dd>訪問スケジュール画面の下にある「最新に更新」を押してください。新しく担当になった患者さんは、これで出るようになります。それでも出ないときは、患者情報画面の「最新に更新」も押してみてください。</dd>
+
+      <dt>画面が前のままで新しくならない</dt>
+      <dd>アプリをいったん閉じて、開き直してください。数回開き直しても変わらないときは院長に連絡を。</dd>
+
+      <dt>他の人の予定や患者さんが見たい</dt>
+      <dd>見られない作りになっています。必要なときは院長に聞いてください。</dd>
+
+      <dt>間違えて保存した</dt>
+      <dd>アプリからは消せません。院長に「いつの・誰の記録か」を伝えてください。</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2><span class="num">7.</span>1日の流れ（まとめ）</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>いつ</th><th>すること</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>朝</td><td>アプリを開く。指示があれば読む。スケジュールでその日の訪問先と他サービスを確認</td></tr>
+          <tr><td>訪問中</td><td>気づいたことがあれば患者情報に書き足す</td></tr>
+          <tr><td>終わったら</td><td>施術記録を「スケジュールを読込」→ チェック → まとめて保存</td></tr>
+          <tr><td>指示を終えたら</td><td>ホームのカードで「✓ 完了」を押す</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>分からないことは院長まで。画面の写真は説明用のもので、患者名はすべて架空です。</p>
+  </footer>
+
+</div>
