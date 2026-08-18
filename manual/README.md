@@ -7,6 +7,7 @@
 
 ```bash
 cd manual
+python3 make_qr.py        # アプリのURLのQRコードを作る（初回だけでよい）
 python3 build_demo.py     # アプリを1枚のHTMLにまとめる（架空データ入り）
 python3 shoot.py          # スタッフ用の画面を撮る
 python3 shoot_owner.py    # オーナー用の画面を撮る
@@ -23,6 +24,7 @@ python3 build_manual.py   # 本文に写真を埋め込み、HTMLとPDFを出す
 | `build_demo.py` | `index.html` + CSS + JS を1枚にまとめ、通信部分を架空データに差し替える |
 | `shoot.py` | スタッフ用の画面写真（home / schedule / patient / service / treatment / absence / settings） |
 | `shoot_owner.py` | オーナー用の画面写真（o_ で始まるもの） |
+| `make_qr.py` | アプリのURLのQRコード。**URLを変えたらここも直す** |
 | `build_manual.py` | 写真を data URI で埋め込み、HTMLとPDFを出す |
 | `manual_src.html` | スタッフ用の本文。`{{IMG:名前}}` が写真の差し込み位置 |
 | `owner_src.html` | オーナー用の本文。`<!--STYLE-->` にスタッフ用のスタイルが入る |

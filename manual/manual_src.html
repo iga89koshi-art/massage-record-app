@@ -114,6 +114,29 @@
   ul.plain { margin: 0 0 16px; padding-left: 1.3em; }
   ul.plain li { margin-bottom: 8px; }
 
+  /* --- アプリの入口（QRとURL） --- */
+  .app-entry {
+    display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap;
+    margin: 24px 0; padding: 18px;
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+  .app-entry .qr {
+    width: 132px; height: 132px; flex: none;
+    border: 1px solid var(--rule); border-radius: 8px; background: #fff;
+  }
+  .app-entry > div { flex: 1 1 15rem; min-width: 0; }
+  .app-entry-label {
+    margin: 0 0 6px;
+    font-size: 12px; font-weight: 700; letter-spacing: .12em; color: var(--accent);
+  }
+  .app-url {
+    margin: 0 0 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px; line-height: 1.5; word-break: break-all;
+  }
+  .app-entry-note { margin: 0; font-size: 14px; color: var(--ink-soft); }
+
   /* --- 画面写真 --- */
   figure {
     margin: 24px 0;
@@ -216,6 +239,8 @@
     .pair { display: block; }
     .pair figure { margin: 0 0 16px; }
     .note { box-shadow: none; border: 1px solid var(--rule); border-left-width: 3px; }
+    .app-entry { box-shadow: none; break-inside: avoid; }
+    .app-entry .qr { width: 30mm; height: 30mm; }
     /* 「指示を終えたら」が途中で折り返さないように */
     td:first-child { white-space: nowrap; }
     footer { margin-top: 28px; }
@@ -234,8 +259,18 @@
     <h2><span class="num">1.</span>最初の1回だけ</h2>
     <p class="lede">院長から<strong>設定コード</strong>と<strong>パスワード</strong>を受け取ってください。別々の方法で届きます（片方はLINE、もう片方は口頭など）。</p>
 
+    <div class="app-entry">
+      <img src="{{IMG:qr}}" alt="アプリを開くQRコード" class="qr">
+      <div>
+        <p class="app-entry-label">アプリを開く</p>
+        <p class="app-url">https://iga89koshi-art.github.io/<wbr>massage-record-app/</p>
+        <p class="app-entry-note">カメラでこのQRを読み取るか、上のアドレスを直接開いてください。<br>
+        <strong>設定コードとパスワードは別々の経路で受け取ります</strong>（片方はLINE、もう片方は口頭など）。</p>
+      </div>
+    </div>
+
     <ol class="steps">
-      <li><p>スマホで院長から届いたアプリのリンクを開きます。</p></li>
+      <li><p>スマホで上のQRを読み取るか、院長から届いたリンクを開きます。</p></li>
       <li><p>ホーム画面の <strong>⚙️ 設定</strong> を押します。</p></li>
       <li><p><strong>「設定コードを読み込む」</strong> を押し、受け取ったコードを貼り付けます。</p></li>
       <li><p>パスワードを入れます。これで接続先も担当者名も自動で入ります。</p></li>
