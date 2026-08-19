@@ -52,8 +52,9 @@ DEMO_SHIM = """<script>
     var patients = [
         { id: 'p1', name: '見本 太郎', reading: 'ミホン タロウ', history: '脳梗塞（2020年）、高血圧',
           symptoms: '右半身に麻痺。歩行時にふらつきあり', family: '長女夫婦と同居。平日の日中は独居',
-          notesUpdated: iso(today) },
-        { id: 'p2', name: '見本 花子', reading: 'ミホン ハナコ', history: '', symptoms: '', family: '' },
+          notesUpdated: iso(today), consentTypes: ['はり・きゅう'] },
+        { id: 'p2', name: '見本 花子', reading: 'ミホン ハナコ', history: '', symptoms: '', family: '',
+          consentTypes: ['あんま・マッサージ'] },
         { id: 'p3', name: '例示 次郎', reading: 'レイジ ジロウ', history: '', symptoms: '', family: '' },
         { id: 'p4', name: '例示 三郎', reading: 'レイジ サブロウ', history: '', symptoms: '', family: '' }
     ];

@@ -9,7 +9,41 @@ let treatmentEntryCounter = 0;
 
 // 施術録のチェック項目（並び順がそのまま記録文の語順になる）
 const OPERATION_PARTS = ['頸部', '肩部', '背部', '腰部', '上肢', '下肢'];
+// はりきゅう同意の患者に出す手技。施術録は監査対応の保険記録なので、
+// 同意書の種類に無い文言を混ぜてはいけない（2026-08-19 オーナー）
 const OPERATION_TREATMENTS = ['刺鍼', 'てい鍼', '電子温灸器'];
+// あんま・マッサージ同意の患者にだけ出す
+const MASSAGE_TREATMENT = 'マッサージ';
+const CONSENT_MASSAGE = 'あんま・マッサージ';
+const CONSENT_ACUPUNCTURE = 'はり・きゅう';
+
+/**
+ * その患者に出してよい施術内容の選択肢。
+ * 同意書の種類が未登録なら、これまで通り鍼の手技だけを出す（勝手に増やさない）。
+ */
+function getTreatmentOptionsFor(patientName) {
+    const patient = findPatientRecordByName(patientName);
+    const types = (patient && patient.consentTypes) || [];
+
+    const options = [];
+    if (!types.length || types.indexOf(CONSENT_ACUPUNCTURE) !== -1) {
+        options.push.apply(options, OPERATION_TREATMENTS);
+    }
+    if (types.indexOf(CONSENT_MASSAGE) !== -1) {
+        options.push(MASSAGE_TREATMENT);
+    }
+    return options;
+}
+
+/**
+ * 患者名から患者データそのものを引く。
+ * 既に名前だけを返す findPatientByName があるので、名前を分けている。
+ */
+function findPatientRecordByName(name) {
+    const key = normalizePatientName(name || '');
+    if (!key) return null;
+    return getPatients().find(p => normalizePatientName(p.name) === key) || null;
+}
 
 // スタッフ用端末では開かせない画面（ホームのボタンも出さない）
 // 指示の一覧・作成はオーナーの画面。スタッフはホームのカードでチェックするだけ。
@@ -523,7 +557,7 @@ function addTreatmentEntry(patient, memo, time, options) {
         <div class="form-group entry-treatment-fields${absent ? ' hidden' : ''}">
             <label>施術内容</label>
             <div class="check-grid">
-                ${createCheckboxesHtml(OPERATION_TREATMENTS, 'entry-treatment', treatments)}
+                ${createCheckboxesHtml(getTreatmentOptionsFor(patient), 'entry-treatment', treatments)}
             </div>
         </div>
         <div class="form-group">
@@ -978,7 +1012,16 @@ function applyPatientBaseTreatmentById(entryId) {
 
     if (!entry) return;
 
-    const base = getPatientBaseTreatment(entry.querySelector('.entry-patient').value);
+    const patient = entry.querySelector('.entry-patient').value;
+
+    // 患者が変われば出してよい手技も変わる（はりきゅう／マッサージ）ので、
+    // チェック欄そのものを作り直す
+    const box = entry.querySelectorAll('.check-grid')[1];
+    if (box) {
+        box.innerHTML = createCheckboxesHtml(getTreatmentOptionsFor(patient), 'entry-treatment', []);
+    }
+
+    const base = getPatientBaseTreatment(patient);
     applyOperationChecks(entry, base.parts, base.treatments);
 }
 

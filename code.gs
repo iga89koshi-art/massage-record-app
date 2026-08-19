@@ -59,6 +59,10 @@ const SERVICE_PLAN_FREQUENCIES = ['毎週', '隔週', '月1回', '不定期'];
  */
 const OPERATION_PARTS = ['頸部', '肩部', '背部', '腰部', '上肢', '下肢'];
 const OPERATION_TREATMENTS = ['刺鍼', 'てい鍼', '電子温灸器'];
+// あんま・マッサージ同意の患者にだけ使う。
+// 既存シートの列位置を動かさないよう、個別列は末尾に足す（ensureOperationColumns_）
+const MASSAGE_TREATMENT = 'マッサージ';
+const ALL_TREATMENTS = OPERATION_TREATMENTS.concat([MASSAGE_TREATMENT]);
 // 「部位」「内容」はレセコン取り込み用のカンマ区切り列。
 // 頸部〜電子温灸器の個別列は人が見るためのもので、両方を残す。
 // 列を後から足せるよう、位置は必ずこの配列から引くこと（数字を直接書かない）。
@@ -436,6 +440,19 @@ function buildOperationNote(parts, treatments) {
 /**
  * 施術録を保存（療養費の裏付けとなる保険記録。患者の様子は書かない）
  */
+/**
+ * 施術録シートに「マッサージ」列が無ければ末尾に足す。何度呼んでも安全。
+ * 途中に差し込むと記録文・タイムスタンプの位置がずれ、過去の行が壊れるので末尾にする。
+ */
+function ensureOperationColumns_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+
+  if (headers.indexOf(MASSAGE_TREATMENT) === -1) {
+    sheet.getRange(1, OPERATION_HEADERS.length + 1).setValue(MASSAGE_TREATMENT);
+  }
+}
+
 function saveOperationRecord(data) {
   try {
     const sheet = getOrCreateOperationSheet();
@@ -443,7 +460,7 @@ function saveOperationRecord(data) {
     const parts = OPERATION_PARTS.filter(function (name) {
       return (data.parts || []).indexOf(name) !== -1;
     });
-    const treatments = OPERATION_TREATMENTS.filter(function (name) {
+    const treatments = ALL_TREATMENTS.filter(function (name) {
       return (data.treatments || []).indexOf(name) !== -1;
     });
 
@@ -476,6 +493,10 @@ function saveOperationRecord(data) {
 
     row.push(data.note || buildOperationNote(parts, treatments));
     row.push(data.timestamp || new Date().toISOString());
+
+    // マッサージは後から足した項目。既存の列をずらさないよう最後に置く
+    ensureOperationColumns_(sheet);
+    row.push(treatments.indexOf(MASSAGE_TREATMENT) !== -1 ? 'TRUE' : '');
 
     sheet.appendRow(row);
 
@@ -718,7 +739,7 @@ function updatePatientBaseTreatment(data) {
     const parts = OPERATION_PARTS.filter(function (name) {
       return (data.parts || []).indexOf(name) !== -1;
     });
-    const treatments = OPERATION_TREATMENTS.filter(function (name) {
+    const treatments = ALL_TREATMENTS.filter(function (name) {
       return (data.treatments || []).indexOf(name) !== -1;
     });
 

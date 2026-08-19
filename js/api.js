@@ -521,6 +521,9 @@ async function fetchPatientsFromNotion() {
             //    ここに持たせておくことで、施術録画面は通信なしで初期表示できる
             const baseParts = multiSelectNames(item.properties?.['基本施術部位']);
             const baseTreatments = multiSelectNames(item.properties?.['基本施術内容']);
+            // 同意書の種類。施術内容の選択肢をこれで出し分ける。
+            // はりきゅう同意の患者の記録に「マッサージ」が混ざらないようにするため
+            const consentTypes = multiSelectNames(item.properties?.['同意書種類']);
 
             // 4. 患者情報画面のメモ欄。患者リストと一緒に持たせておけば
             //    画面を開いた時点で通信せずに出せる（保存時だけ書き戻す）。
@@ -532,6 +535,7 @@ async function fetchPatientsFromNotion() {
                 reading: reading,
                 baseParts: baseParts,
                 baseTreatments: baseTreatments,
+                consentTypes: consentTypes,
                 history: plainText(item.properties?.['既往歴']?.rich_text),
                 symptoms: plainText(item.properties?.['現在の症状']?.rich_text),
                 family: plainText(item.properties?.['同居家族']?.rich_text),
