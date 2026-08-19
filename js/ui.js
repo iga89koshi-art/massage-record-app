@@ -605,8 +605,11 @@ async function saveBatchTreatment() {
         // 施術した日は、部位と施術内容が無いと施術録（療養費の裏付け）が作られない。
         // 空のまま保存できてしまい、記録はあるのに裏付けだけ無い状態になっていた。
         // 施術していない日は「お休み・振替」を選ぶ運用なので、ここは必須にする。
-        if (!isAbsent && (!parts.length || !treatments.length)) {
-            showError(`記録${index + 1}（${patient}）: 部位と施術内容を選んでください。`
+        // 施術した日は部位が要る。無いと施術録（療養費の裏付け）が作られない。
+        // 施術内容は必須にしない。選択肢が鍼の手技しかないため、マッサージ同意の患者に
+        // 無理に選ばせると、やっていない施術を記録することになる（2026-08-19 オーナー指摘）
+        if (!isAbsent && !parts.length) {
+            showError(`記録${index + 1}（${patient}）: 部位を選んでください。`
                 + '施術していない日は「お休み・振替」を選びます');
             hasError = true;
             return;
@@ -629,7 +632,7 @@ async function saveBatchTreatment() {
             },
             // 施術録は療養費の裏付けなので、お休み・振替の日は絶対に書かない。
             // 施術した日で、部位と施術内容が両方選ばれているときだけ残す
-            operationRecord: (!isAbsent && parts.length && treatments.length) ? {
+            operationRecord: (!isAbsent && parts.length) ? {
                 date,
                 patientId: '',
                 patientName: patient,
@@ -1023,6 +1026,9 @@ function isSameCheckList(a, b) {
  * 例：腰部、下肢に刺鍼、電子温灸器を施術
  */
 function buildOperationNote(parts, treatments) {
+    // 施術内容が未選択のときは手技を書かない。
+    // 選択肢が鍼の手技しかないので、埋めると事実と違う記録になりうる
+    if (!treatments.length) return `${parts.join('、')}に施術`;
     return `${parts.join('、')}に${treatments.join('、')}を施術`;
 }
 

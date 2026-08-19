@@ -423,8 +423,12 @@ function toIsoDateString(value) {
  * 例：腰部、下肢に刺鍼、電子温灸器を施術
  */
 function buildOperationNote(parts, treatments) {
-  if (!parts.length || !treatments.length) {
+  if (!parts.length) {
     return '';
+  }
+  // 施術内容が未選択のときは手技を書かない（事実と違う記録にしないため）
+  if (!treatments.length) {
+    return parts.join('、') + 'に施術';
   }
   return parts.join('、') + 'に' + treatments.join('、') + 'を施術';
 }
@@ -443,8 +447,11 @@ function saveOperationRecord(data) {
       return (data.treatments || []).indexOf(name) !== -1;
     });
 
-    if (!parts.length || !treatments.length) {
-      throw new Error('部位と施術内容を1つ以上選んでください');
+    // 部位は必須。施術内容は必須にしない。
+    // 選択肢が鍼の手技しかないため、マッサージ同意の患者に選ばせると
+    // やっていない施術を記録することになる（2026-08-19 オーナー指摘）
+    if (!parts.length) {
+      throw new Error('部位を1つ以上選んでください');
     }
 
     const isoDate = toIsoDateString(data.date);
