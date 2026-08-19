@@ -602,6 +602,16 @@ async function saveBatchTreatment() {
             return;
         }
 
+        // 施術した日は、部位と施術内容が無いと施術録（療養費の裏付け）が作られない。
+        // 空のまま保存できてしまい、記録はあるのに裏付けだけ無い状態になっていた。
+        // 施術していない日は「お休み・振替」を選ぶ運用なので、ここは必須にする。
+        if (!isAbsent && (!parts.length || !treatments.length)) {
+            showError(`記録${index + 1}（${patient}）: 部位と施術内容を選んでください。`
+                + '施術していない日は「お休み・振替」を選びます');
+            hasError = true;
+            return;
+        }
+
         const timestamp = getTimestamp();
 
         items.push({
@@ -710,14 +720,25 @@ async function saveBatchTreatment() {
  * 部位・施術内容が未選択の記録は operationRecord が null なので書き込まない。
  */
 function saveOperationsInBackground(savedItems) {
-    savedItems.forEach(item => {
-        if (!item.operationRecord) return;
+    const failed = [];
 
-        saveOperationRecord(item.operationRecord)
+    const jobs = savedItems.map(item => {
+        if (!item.operationRecord) return Promise.resolve();
+
+        return saveOperationRecord(item.operationRecord)
             .then(() => syncPatientBaseTreatment(item.operationRecord))
             .catch(error => {
                 console.warn('Save operation record failed:', item.operationRecord.patientName, error);
+                failed.push(item.operationRecord.patientName);
             });
+    });
+
+    // 施術録は療養費の裏付けなので、書けなかったことを黙って流さない。
+    // 施術記録そのものは保存できているため、保存自体は成功扱いのままにする
+    Promise.all(jobs).then(() => {
+        if (failed.length === 0) return;
+        showError(`${failed.join('、')} の施術録を保存できませんでした。`
+            + '電波の良い場所で、その患者の記録をもう一度入力して保存してください');
     });
 }
 
