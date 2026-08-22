@@ -548,16 +548,33 @@ function addTreatmentEntry(patient, memo, time, options) {
                 value="${escapeHtml(opts.absenceReason || '')}"
                 oninput="autoSaveTreatmentDraft()">
         </div>
-        <div class="form-group entry-treatment-fields${absent ? ' hidden' : ''}">
-            <label>部位</label>
-            <div class="check-grid">
-                ${createCheckboxesHtml(OPERATION_PARTS, 'entry-part', parts)}
-            </div>
+        <div class="form-group entry-last-record-group">
+            <label>前回の記録</label>
+            <div class="entry-last-record is-loading">前回の記録を読み込み中…</div>
         </div>
-        <div class="form-group entry-treatment-fields${absent ? ' hidden' : ''}">
-            <label>施術内容</label>
-            <div class="check-grid">
-                ${createCheckboxesHtml(getTreatmentOptionsFor(patient), 'entry-treatment', treatments)}
+        <div class="form-group entry-treatment-fields entry-operation-section${absent ? ' hidden' : ''}">
+            <div class="operation-toggle-header">
+                <div class="operation-toggle-text">
+                    <span class="operation-toggle-label">部位・施術内容</span>
+                    <span class="operation-toggle-summary"></span>
+                </div>
+                <button type="button" class="btn-operation-toggle"
+                    aria-expanded="false"
+                    onclick="toggleOperationSection('${entryId}')">開く</button>
+            </div>
+            <div class="operation-toggle-body hidden">
+                <div class="form-group">
+                    <label>部位</label>
+                    <div class="check-grid">
+                        ${createCheckboxesHtml(OPERATION_PARTS, 'entry-part', parts)}
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>施術内容</label>
+                    <div class="check-grid">
+                        ${createCheckboxesHtml(getTreatmentOptionsFor(patient), 'entry-treatment', treatments)}
+                    </div>
+                </div>
             </div>
         </div>
         <div class="form-group">
@@ -567,7 +584,231 @@ function addTreatmentEntry(patient, memo, time, options) {
     `;
 
     list.appendChild(entry);
+    updateOperationSummary(entry);
+    refreshLastRecordBlock(entry);
     autoSaveTreatmentDraft();
+}
+
+/**
+ * 部位・施術内容のまとめ表示を開け閉めする。
+ * チェック欄はCSSで隠すだけで、DOMからは絶対に外さない
+ * （保存処理はカード内のチェックボックスをそのまま読んでいるため）。
+ */
+function toggleOperationSection(entryId) {
+    const entry = document.getElementById(entryId);
+    if (!entry) return;
+
+    const body = entry.querySelector('.operation-toggle-body');
+    const button = entry.querySelector('.btn-operation-toggle');
+    if (!body || !button) return;
+
+    const willOpen = body.classList.contains('hidden');
+    body.classList.toggle('hidden', !willOpen);
+    button.textContent = willOpen ? '閉じる' : '開く';
+    button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+
+/**
+ * 閉じているときに中身が分かるよう、選択中の部位・施術内容を1行にまとめる。
+ * 例：肩部・背部・腰部・下肢 ／ てい鍼・電子温灸器
+ */
+function buildOperationSummaryText(entry) {
+    const parts = getCheckedValues(entry, '.entry-part');
+    const treatments = getCheckedValues(entry, '.entry-treatment');
+
+    if (!parts.length && !treatments.length) return '未選択';
+
+    const left = parts.length ? parts.join('・') : '部位なし';
+    const right = treatments.length ? treatments.join('・') : '施術内容なし';
+    return `${left} ／ ${right}`;
+}
+
+function updateOperationSummary(entry) {
+    if (!entry) return;
+    const box = entry.querySelector('.operation-toggle-summary');
+    if (!box) return;
+
+    const text = buildOperationSummaryText(entry);
+    box.textContent = text;
+    box.classList.toggle('is-empty', text === '未選択');
+}
+
+function updateAllOperationSummaries() {
+    document.querySelectorAll('#treatment-batch-list .batch-entry')
+        .forEach(entry => updateOperationSummary(entry));
+}
+
+// =============================================
+// 前回の記録（カード内に出す参考表示）
+//
+// 誰が担当した回でも、その患者の直近1回分を出す。
+// あくまで参考なので、取れなくても入力・保存は一切止めない。
+// 1日分のカードをまとめて1回の通信で取り、セッション中はメモリに持つ。
+// =============================================
+
+// 正規化した患者名 → 記録オブジェクト（記録が無い患者は null）
+const latestRecordsCache = new Map();
+// これから問い合わせる患者名。カードを何枚追加しても1回の通信にまとめる
+let latestRecordsQueue = new Set();
+let latestRecordsTimer = null;
+// 通信中の患者名（二重に投げない）
+const latestRecordsInFlight = new Set();
+
+/**
+ * 保存後など、次の入力で最新の内容が出るように取り直す
+ */
+function clearLatestRecordsCache() {
+    latestRecordsCache.clear();
+    latestRecordsInFlight.clear();
+    document.querySelectorAll('#treatment-batch-list .batch-entry')
+        .forEach(entry => refreshLastRecordBlock(entry));
+}
+
+/**
+ * カード1枚分の「前回の記録」を描き直す
+ */
+function refreshLastRecordBlock(entry) {
+    if (!entry) return;
+
+    const box = entry.querySelector('.entry-last-record');
+    if (!box) return;
+
+    const select = entry.querySelector('.entry-patient');
+    const name = select ? select.value : '';
+    const key = normalizePatientName(name || '');
+
+    if (!key) {
+        renderLastRecordState(box, 'empty', '患者を選ぶと前回の記録が出ます');
+        return;
+    }
+
+    if (latestRecordsCache.has(key)) {
+        const record = latestRecordsCache.get(key);
+        if (record) {
+            renderLastRecord(box, record);
+        } else {
+            renderLastRecordState(box, 'none', '前回の記録なし');
+        }
+        return;
+    }
+
+    renderLastRecordState(box, 'loading', '前回の記録を読み込み中…');
+    queueLatestRecordFetch(name);
+}
+
+function queueLatestRecordFetch(name) {
+    const key = normalizePatientName(name || '');
+    if (!key || latestRecordsInFlight.has(key)) return;
+
+    latestRecordsQueue.add(name);
+
+    // カードを1枚ずつ追加していく作りなので、少し待って1回にまとめる
+    if (latestRecordsTimer) return;
+    latestRecordsTimer = setTimeout(() => {
+        latestRecordsTimer = null;
+        flushLatestRecordFetch();
+    }, 300);
+}
+
+async function flushLatestRecordFetch() {
+    const names = Array.from(latestRecordsQueue);
+    latestRecordsQueue = new Set();
+
+    const targets = names.filter(name => {
+        const key = normalizePatientName(name || '');
+        return key && !latestRecordsCache.has(key) && !latestRecordsInFlight.has(key);
+    });
+    if (!targets.length) return;
+
+    targets.forEach(name => latestRecordsInFlight.add(normalizePatientName(name)));
+
+    const payload = targets.map(name => {
+        const patient = findPatientRecordByName(name);
+        return { name: name, id: (patient && patient.id) || '' };
+    });
+
+    try {
+        const result = await fetchLatestRecords(payload);
+        const map = (result && result.data) || {};
+
+        targets.forEach(name => {
+            const key = normalizePatientName(name);
+            const record = map[name] || map[key] || null;
+            latestRecordsCache.set(key, record || null);
+            latestRecordsInFlight.delete(key);
+        });
+
+        document.querySelectorAll('#treatment-batch-list .batch-entry')
+            .forEach(entry => refreshLastRecordBlock(entry));
+    } catch (error) {
+        // 参考表示なので、失敗しても入力・保存は止めない
+        console.warn('Fetch latest records failed:', error);
+
+        targets.forEach(name => latestRecordsInFlight.delete(normalizePatientName(name)));
+
+        const failed = new Set(targets.map(name => normalizePatientName(name)));
+        document.querySelectorAll('#treatment-batch-list .batch-entry').forEach(entry => {
+            const select = entry.querySelector('.entry-patient');
+            const key = normalizePatientName(select ? select.value : '');
+            if (!key || !failed.has(key)) return;
+            const box = entry.querySelector('.entry-last-record');
+            if (box) renderLastRecordState(box, 'error', '前回の記録を取得できませんでした');
+        });
+    }
+}
+
+function renderLastRecordState(box, state, message) {
+    box.className = `entry-last-record is-${state}`;
+    box.textContent = message;
+}
+
+/**
+ * 「2026-08-20（2日前）」の形にする。日付が読めなければそのまま出す
+ */
+function formatLastRecordDate(dateText) {
+    const raw = String(dateText || '').trim();
+    if (!raw) return '日付不明';
+
+    const parsed = new Date(`${raw}T00:00:00`);
+    if (isNaN(parsed.getTime())) return raw;
+
+    const today = new Date(`${getToday()}T00:00:00`);
+    const days = Math.round((today.getTime() - parsed.getTime()) / 86400000);
+
+    if (days === 0) return `${raw}（今日）`;
+    if (days < 0) return raw;
+    return `${raw}（${days}日前）`;
+}
+
+function renderLastRecord(box, record) {
+    const status = record.status || TREATMENT_STATUS_DONE;
+    const isAbsent = status === TREATMENT_STATUS_ABSENT;
+
+    const rows = [];
+    rows.push(['日付', formatLastRecordDate(record.date)]);
+    rows.push(['担当者', record.staff || '（記載なし）']);
+
+    const statusText = isAbsent
+        ? (record.absenceReason ? `${status}（${record.absenceReason}）` : status)
+        : status;
+    rows.push(['区分', statusText]);
+
+    if (!isAbsent) {
+        const parts = (record.parts || []).join('・');
+        const treatments = (record.treatments || []).join('・');
+        rows.push(['部位', parts || '（記載なし）']);
+        rows.push(['施術内容', treatments || '（記載なし）']);
+    }
+
+    rows.push(['メモ', record.memo || '（記載なし）']);
+
+    box.className = 'entry-last-record';
+    box.innerHTML = rows.map(([label, value]) => `
+        <div class="last-record-row">
+            <span class="last-record-label">${escapeHtml(label)}</span>
+            <span class="last-record-value">${escapeHtml(String(value))}</span>
+        </div>
+    `).join('');
 }
 
 /**
@@ -575,6 +816,11 @@ function addTreatmentEntry(patient, memo, time, options) {
  */
 function onTreatmentPatientChange(entryId) {
     applyPatientBaseTreatmentById(entryId);
+
+    const entry = document.getElementById(entryId);
+    updateOperationSummary(entry);
+    refreshLastRecordBlock(entry);
+
     autoSaveTreatmentDraft();
 }
 
@@ -729,6 +975,11 @@ async function saveBatchTreatment() {
         saveOperationsInBackground(savedItems);
 
         renumberEntries('treatment-batch-list');
+
+        // 保存した内容が次の入力の「前回の記録」に出るよう、取り直させる
+        if (successCount > 0) {
+            clearLatestRecordsCache();
+        }
 
         // 残っているのは失敗分のみ。空になったら入力枠を1つ用意
         if (document.querySelectorAll('#treatment-batch-list .batch-entry').length === 0) {
@@ -930,8 +1181,13 @@ function setupTreatmentScreen() {
     document.getElementById('treatment-date').addEventListener('change', autoSaveTreatmentDraft);
     document.getElementById('treatment-staff').addEventListener('change', autoSaveTreatmentDraft);
 
-    // 部位・施術内容のチェックも一時保存に含める
-    document.getElementById('treatment-batch-list').addEventListener('change', autoSaveTreatmentDraft);
+    // 部位・施術内容のチェックも一時保存に含める。
+    // 併せて、閉じているときのまとめ表示もその場で書き換える
+    document.getElementById('treatment-batch-list').addEventListener('change', event => {
+        const entry = event.target.closest && event.target.closest('.batch-entry');
+        if (entry) updateOperationSummary(entry);
+        autoSaveTreatmentDraft();
+    });
 }
 
 // =============================================

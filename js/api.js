@@ -91,6 +91,20 @@ async function getTreatmentRecords(filters = {}) {
     );
 }
 
+/**
+ * 患者ごとの「前回の記録」をまとめて取得する。
+ * @param {Array} patients - [{ name: '患者名', id: '患者ID' }, ...]
+ * @returns {Object} { success: true, data: { '患者名': {...} } }
+ *
+ * カードの参考表示にしか使わないので、待たせないようリトライは2回まで。
+ * 失敗しても呼び出し側で握りつぶし、入力・保存は止めないこと。
+ */
+async function fetchLatestRecords(patients) {
+    return await callApiWithRetry(() =>
+        callGasApi('getLatestRecords', { patients }), 2
+    );
+}
+
 // === 施術録（療養費の保険記録） ===
 
 async function saveOperationRecord(record) {

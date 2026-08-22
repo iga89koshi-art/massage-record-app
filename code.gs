@@ -126,6 +126,9 @@ function doPost(e) {
       case 'getLastWeekSales':
         result = getLastWeekRecords(data, 'sales');
         break;
+      case 'getLatestRecords':
+        result = getLatestRecords(data);
+        break;
       case 'proxyNotionPatients':
         result = proxyNotionPatients(data);
         break;
@@ -510,6 +513,208 @@ function saveOperationRecord(data) {
     return { success: false, error: error.toString() };
   }
 }
+/**
+ * 患者ごとの「直近1回分」をまとめて返す（アプリのカードに出す参考表示用）。
+ *
+ * 担当者は絞らない。誰が入った回でも、その患者の最後の記録を返す。
+ *
+ * リクエスト:
+ *   { action: 'getLatestRecords', token: '合言葉',
+ *     data: { patients: [ { name: '山田 太郎', id: '' }, ... ] } }
+ *   ※ patients は文字列の配列（名前だけ）でも受け付ける。
+ *
+ * レスポンス:
+ *   { success: true,
+ *     data: {
+ *       '山田 太郎': {
+ *         patientName: '山田 太郎',
+ *         date: '2026-08-20',        // 施術記録シートの最新日
+ *         staff: '五十嵐',
+ *         status: '施術',            // または 'お休み・振替'
+ *         absenceReason: '',
+ *         memo: '肩の張りが強い',
+ *         parts: ['肩部', '腰部'],       // 施術録シートの最新日（無ければ空配列）
+ *         treatments: ['てい鍼'],
+ *         operationDate: '2026-08-20'    // 部位・施術内容を取った日
+ *       },
+ *       '該当なしの患者名': null
+ *     } }
+ *
+ * 効率のため、各シートは getDataRange().getValues() で1回だけ読み、
+ * 患者名をキーにしたマップを作ってから引く（患者ごとにシートを走査しない）。
+ */
+function getLatestRecords(data) {
+  try {
+    var requested = normalizeLatestRecordTargets_(data);
+
+    if (!requested.length) {
+      return { success: true, data: {} };
+    }
+
+    var treatmentMap = buildLatestTreatmentMap_();
+    var operationMap = buildLatestOperationMap_();
+
+    var out = {};
+    for (var i = 0; i < requested.length; i++) {
+      var target = requested[i];
+      var key = normalizeLatestRecordName_(target.name);
+      var latest = key ? treatmentMap[key] : null;
+
+      if (!latest) {
+        out[target.name] = null;
+        continue;
+      }
+
+      var operation = key ? operationMap[key] : null;
+
+      out[target.name] = {
+        patientName: latest.patientName,
+        date: latest.date,
+        staff: latest.staff,
+        status: latest.status,
+        absenceReason: latest.absenceReason,
+        memo: latest.memo,
+        parts: operation ? operation.parts : [],
+        treatments: operation ? operation.treatments : [],
+        operationDate: operation ? operation.date : ''
+      };
+    }
+
+    return { success: true, data: out };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * 患者の指定を { name, id } の配列に揃える。
+ * 名前だけの配列で送られてきても動くようにしておく。
+ */
+function normalizeLatestRecordTargets_(data) {
+  var list = (data && data.patients) || [];
+  var out = [];
+  var seen = {};
+
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i];
+    var name = (item && typeof item === 'object') ? item.name : item;
+    name = String(name || '').trim();
+    if (!name || seen[name]) continue;
+    seen[name] = true;
+    out.push({ name: name, id: (item && typeof item === 'object' && item.id) || '' });
+  }
+  return out;
+}
+
+/**
+ * 患者名の表記ゆれを吸収したキー。
+ * アプリ側の normalizePatientName と同じ規則にする
+ *（かっこ書きを落として空白を全部取る）。ここを変えるなら両方直すこと。
+ */
+function normalizeLatestRecordName_(name) {
+  return String(name || '')
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/[\s\u3000]/g, '')
+    .trim();
+}
+
+/**
+ * 施術記録シートを1回だけ読み、患者名 → 最新の1行 のマップを作る
+ */
+function buildLatestTreatmentMap_() {
+  var map = {};
+  var sheet = getSpreadsheet().getSheetByName(SHEET_NAMES.TREATMENT);
+  if (!sheet) return map;
+
+  var rows = sheet.getDataRange().getValues();
+
+  // [日付, 患者ID, 患者名, 担当者, メモ, タイムスタンプ, Notion同期, 区分, 休みの理由]
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    var name = String(row[2] || '').trim();
+    if (!name) continue;
+
+    var key = normalizeLatestRecordName_(name);
+    var date = toIsoDateString(row[0]);
+    var timestamp = String(row[5] || '');
+
+    var current = map[key];
+    // 同じ日付の行が複数あれば、タイムスタンプの新しい方を採用する
+    if (current && (current.date > date ||
+        (current.date === date && current.timestamp >= timestamp))) {
+      continue;
+    }
+
+    map[key] = {
+      patientName: name,
+      date: date,
+      staff: String(row[3] || ''),
+      memo: String(row[4] || ''),
+      timestamp: timestamp,
+      // 古い行は区分が空。その場合は「施術」とみなす
+      status: String(row[7] || '') || TREATMENT_STATUS_DONE,
+      absenceReason: String(row[8] || '')
+    };
+  }
+
+  return map;
+}
+
+/**
+ * 施術録シートを1回だけ読み、患者名 → 最新の部位・施術内容 のマップを作る。
+ * 部位・施術内容はこのシートにしか無いので、患者名で施術記録と突き合わせる。
+ * 列の位置は OPERATION_HEADERS から引く（数字を直接書かない）。
+ */
+function buildLatestOperationMap_() {
+  var map = {};
+  var sheet = getSpreadsheet().getSheetByName(SHEET_NAMES.OPERATION);
+  if (!sheet) return map;
+
+  var rows = sheet.getDataRange().getValues();
+  if (!rows.length) return map;
+
+  var dateCol = OPERATION_HEADERS.indexOf('日付');
+  var nameCol = OPERATION_HEADERS.indexOf('患者名');
+  var partsCol = OPERATION_HEADERS.indexOf('部位');
+  var treatmentsCol = OPERATION_HEADERS.indexOf('内容');
+  var timestampCol = OPERATION_HEADERS.indexOf('タイムスタンプ');
+
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    var name = String(row[nameCol] || '').trim();
+    if (!name) continue;
+
+    var key = normalizeLatestRecordName_(name);
+    var date = toIsoDateString(row[dateCol]);
+    var timestamp = String(row[timestampCol] || '');
+
+    var current = map[key];
+    if (current && (current.date > date ||
+        (current.date === date && current.timestamp >= timestamp))) {
+      continue;
+    }
+
+    map[key] = {
+      date: date,
+      timestamp: timestamp,
+      parts: splitOperationList_(row[partsCol]),
+      treatments: splitOperationList_(row[treatmentsCol])
+    };
+  }
+
+  return map;
+}
+
+/**
+ * 「肩部,腰部」のカンマ区切り列を配列に戻す
+ */
+function splitOperationList_(value) {
+  return String(value || '')
+    .split(',')
+    .map(function (item) { return item.trim(); })
+    .filter(function (item) { return item !== ''; });
+}
+
 /**
  * 先週の記録コピー用データ取得
  * @param {Object} data - { staff: 担当者名, baseDate: 基準日(yyyy-MM-dd) }

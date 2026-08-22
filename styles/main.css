@@ -779,6 +779,115 @@ tbody tr:hover {
     gap: var(--spacing-sm);
 }
 
+/* 部位・施術内容の開け閉め。
+   閉じているときも中身は残す（保存処理がチェックボックスを直接読むため、
+   display:none で隠すだけにして、DOMからは絶対に外さない） */
+.operation-toggle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+}
+
+.operation-toggle-text {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.operation-toggle-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.operation-toggle-summary {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--primary-dark);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.operation-toggle-summary.is-empty {
+    color: var(--text-secondary);
+}
+
+/* 施術中の片手操作でも押せるよう、指1本分の高さを確保する */
+.btn-operation-toggle {
+    flex: 0 0 auto;
+    min-width: 72px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--primary-color);
+    border-radius: var(--radius-md);
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-operation-toggle:active {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.operation-toggle-body {
+    margin-top: var(--spacing-md);
+}
+
+.operation-toggle-body.hidden {
+    display: none;
+}
+
+/* 前回の記録（参考表示。取れなくても入力は続けられる） */
+.entry-last-record {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.entry-last-record.is-loading,
+.entry-last-record.is-none,
+.entry-last-record.is-empty {
+    color: var(--text-secondary);
+}
+
+.entry-last-record.is-error {
+    background: #FFF3E0;
+    border-color: var(--warning-color);
+    color: #7a4a00;
+}
+
+.last-record-row {
+    display: flex;
+    gap: 8px;
+}
+
+.last-record-row + .last-record-row {
+    margin-top: 4px;
+}
+
+.last-record-label {
+    flex: 0 0 66px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.last-record-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+}
+
 /* 通信できず古い予定を出しているときの注記 */
 .schedule-freshness {
     margin-top: var(--spacing-sm);
