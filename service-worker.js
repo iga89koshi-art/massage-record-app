@@ -1,14 +1,16 @@
-const CACHE_NAME = 'massage-record-v31';
+const CACHE_NAME = 'massage-record-v32';
+// index.html が読み込むバージョン付きURLと一致させること（ズレると
+// インストール時のプリキャッシュがオフライン時に一致しなくなる）
 const urlsToCache = [
     './',
     './index.html',
-    './styles/main.css',
-    './js/app.js',
-    './js/api.js',
-    './js/storage.js',
-    './js/config-share.js',
-    './js/ui.js',
-    './js/utils.js',
+    './styles/main.css?v=29',
+    './js/utils.js?v=29',
+    './js/storage.js?v=29',
+    './js/config-share.js?v=29',
+    './js/api.js?v=29',
+    './js/ui.js?v=29',
+    './js/app.js?v=29',
     './manifest.json',
     './icons/icon-192.png',
     './icons/icon-512.png'
@@ -47,7 +49,11 @@ self.addEventListener('fetch', event => {
     }
 
     event.respondWith(
-        fetch(event.request)
+        // cache: 'no-store' でブラウザのHTTPディスクキャッシュ自体を迂回する。
+        // これが無いと「ネットワーク優先」のつもりでも fetch() がOS/ブラウザの
+        // キャッシュから古いレスポンスを返してしまい、デプロイ後も
+        // 開き直すだけでは新しい js/css が届かないことがあった。
+        fetch(event.request, { cache: 'no-store' })
             .then(response => {
                 // レスポンスをキャッシュに保存
                 const responseToCache = response.clone();

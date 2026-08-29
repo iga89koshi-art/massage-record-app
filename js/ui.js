@@ -2159,7 +2159,13 @@ function populateViewStaffFilter() {
     if (!filterSelect) return;
 
     const previous = filterSelect.value;
-    const staff = getTreatmentStaff();
+    // 担当者マスタの「type」列は自由入力のため、'施術'を含む値が
+    // 1件も無いとここが空になり、担当者フィルタが全く選べなくなる。
+    // その場合は全担当者を出すフォールバックにする。
+    let staff = getTreatmentStaff();
+    if (!staff || staff.length === 0) {
+        staff = getStaff();
+    }
 
     filterSelect.innerHTML = '<option value="all">全て</option>' +
         staff.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
