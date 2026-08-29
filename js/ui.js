@@ -2127,8 +2127,9 @@ function setupLabelScreen() {
 let currentViewTab = 'treatment';
 
 function initViewScreen() {
-    // 患者の絞り込み候補は開くたびに作り直す（訪問予定を取り直した後も追従させる）
+    // 患者・担当者の絞り込み候補は開くたびに作り直す（訪問予定を取り直した後も追従させる）
     populateViewPatientFilter();
+    populateViewStaffFilter();
     showViewTab('treatment');
 }
 
@@ -2150,6 +2151,23 @@ function populateViewPatientFilter() {
     });
 }
 
+/**
+ * 担当者フィルタの選択肢。担当者マスタのうち施術を行う人だけ。
+ */
+function populateViewStaffFilter() {
+    const filterSelect = document.getElementById('filter-treatment-staff');
+    if (!filterSelect) return;
+
+    const previous = filterSelect.value;
+    const staff = getTreatmentStaff();
+
+    filterSelect.innerHTML = '<option value="all">全て</option>' +
+        staff.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+
+    const stillThere = staff.some(s => s.name === previous);
+    filterSelect.value = stillThere ? previous : 'all';
+}
+
 // 記録閲覧は施術記録だけになったので、タブは無い。呼び出し側の互換のために残す
 function showViewTab(tab) {
     currentViewTab = 'treatment';
@@ -2157,6 +2175,7 @@ function showViewTab(tab) {
 
 async function loadTreatmentRecords() {
     const patient = document.getElementById('filter-treatment-patient').value;
+    const staff = document.getElementById('filter-treatment-staff').value;
     const period = document.getElementById('filter-treatment-period').value;
 
     const dateRange = getDateRange(period);
@@ -2173,7 +2192,7 @@ async function loadTreatmentRecords() {
         hideLoading();
 
         if (result.success && result.data) {
-            displayTreatmentRecords(result.data);
+            displayTreatmentRecords(result.data, staff);
         } else {
             showError('データの取得に失敗しました');
         }
@@ -2183,12 +2202,16 @@ async function loadTreatmentRecords() {
     }
 }
 
-function displayTreatmentRecords(records) {
+function displayTreatmentRecords(records, staffFilter) {
     const tbody = document.getElementById('treatment-records-body');
     tbody.innerHTML = '';
 
     // スタッフ用端末では自分が関わる患者の記録だけにする
     records = filterByMyPatients(records, r => r.patientName);
+
+    if (staffFilter && staffFilter !== 'all') {
+        records = records.filter(r => r.staff === staffFilter);
+    }
 
     if (records.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">データがありません</td></tr>';
@@ -2215,6 +2238,7 @@ function setupViewScreen() {
     });
 
     populateViewPatientFilter();
+    populateViewStaffFilter();
 }
 
 // =============================================
@@ -3352,7 +3376,25 @@ function initUI() {
     setupLabelScreen();
     setupViewScreen();
     setupSettingsScreen();
+    setupHomeButtons();
 
     // 役割による表示の出し分け（未設定の端末はオーナー扱いなので今まで通り）
     applyRoleToUi();
+}
+
+/**
+ * 各画面のヘッダーに「ホームへ」ボタンを差し込む。
+ * 下部の「戻る」まで届かない長い画面（記録閲覧・訪問スケジュール等）でも
+ * スクロールせずにホームへ戻れるようにする。ヘッダー自体は上部に固定表示する。
+ */
+function setupHomeButtons() {
+    document.querySelectorAll('.screen-header').forEach(header => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-home-header';
+        btn.setAttribute('aria-label', 'ホームへ戻る');
+        btn.textContent = '🏠 ホーム';
+        btn.addEventListener('click', () => showScreen('home'));
+        header.appendChild(btn);
+    });
 }
