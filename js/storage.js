@@ -111,7 +111,10 @@ function getStaff() {
 
 function getTreatmentStaff() {
     const staff = getStaff();
-    return staff.filter(s => s.type && s.type.includes('施術'));
+    const treatmentStaff = staff.filter(s => s.type && s.type.includes('施術'));
+    // 種別が実データと噛み合わずフィルタが空になった場合は、絞り込み自体を諦めて全員を出す
+    // （「担当者が選べない」より「絞り込みが効かない」方がまだ実害が小さい）
+    return treatmentStaff.length > 0 ? treatmentStaff : staff;
 }
 
 
