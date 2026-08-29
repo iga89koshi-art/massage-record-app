@@ -55,6 +55,10 @@ async function loadInitialData() {
         if (staff.length === 0) {
             console.log('Fetching staff data from GAS...');
             await fetchStaffFromGas();
+        } else {
+            // キャッシュがあっても種別追加などマスタの更新は反映したいので、
+            // 表示は既存キャッシュのまま裏で取り直す（起動を待たせない）
+            fetchStaffFromGas().catch(e => console.warn('Staff background refresh failed:', e));
         }
 
         // 患者データを取得（キャッシュがない場合）
